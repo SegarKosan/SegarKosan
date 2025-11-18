@@ -1,56 +1,74 @@
-#include <WiFi.h>
+/*
+ * SegarKosan: Smart Kosan with Odor Detection
+ * 
+ * PIN CONFIGURATION (ESP32-C3):
+ * =============================
+ * DHT22:     GPIO4 (Digital)
+ * SH1106:    GPIO8 (SDA), GPIO9 (SCL) - I2C
+ * MQ135:     GPIO0 (Analog ADC), GPIO10 (Digital) [unused]
+*/
+
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
 #include "DHT22.h"
 #include "MQ135.h"
+#include "esp32c3.h"
 #include "SSH1106.h"
 
-// ====== Konfigurasi WiFi dan Server ======
+#undef MQ135_VOLTAGE_RESOLUTION
+#define MQ135_VOLTAGE_RESOLUTION 3.3f
+#undef MQ135_ADC_BIT_RESOLUTION
+#define MQ135_ADC_BIT_RESOLUTION 12
+#undef MQ135_ANALOG_PIN
+#define MQ135_ANALOG_PIN 0   // GPIO0 (Analog ADC) 
+#undef MQ135_DIGITAL_PIN
+#define MQ135_DIGITAL_PIN 10  // GPIO10 (DOUT) [unused]
+
+DHT22Sensor dht22;
+SH1106Display oled;
+MQ135Sensor mq135;
+WebSocketsClient webSocket;
+unsigned long lastSend = 0;
+
+// WiFi & Websocket Config
 const char* ssid = "Ersyadha_32";
 const char* password = "ersyadha123";
 const char* websocket_server = "192.168.18.115"; 
 const uint16_t websocket_port = 8080;
 
-// ====== Objek Sensor ======
-DHT22Sensor dht22;
-MQ135Sensor mq135;
-SH1106Display oled;
-
-// ====== WebSocket Client ======
-WebSocketsClient webSocket;
-unsigned long lastSend = 0;
-
-// ====== Event Handler WebSocket ======
+// Event Handler WebSocket 
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
   switch (type) {
     case WStype_CONNECTED:
-      Serial.println("✅ Connected to WebSocket Server!");
+      Serial.println("Connected to WebSocket Server!");
       break;
     case WStype_DISCONNECTED:
-      Serial.println("⚠️ Disconnected from server! Reconnecting...");
+      Serial.println("Disconnected from server! Reconnecting...");
       break;
     case WStype_TEXT:
-      Serial.printf("📩 Message from server: %s\n", payload);
+      Serial.printf("Message from server: %s\n", payload);
       break;
     default:
       break;
   }
 }
 
-// ====== Setup ======
 void setup() {
   Serial.begin(115200);
-  Serial.println("\n🚀 Booting ESP32-C3 WebSocket Sensor Client...");
-
+  Serial.println(F("=== SegarKosan on ESP32-C3 ==="));
+  
   // Connect to WiFi
   WiFi.begin(ssid, password);
   Serial.print("🔌 Connecting to WiFi");
-  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
-  Serial.println("\n✅ WiFi connected! IP: " + WiFi.localIP().toString());
+  while (WiFi.status() != WL_CONNECTED) { 
+    delay(500); 
+    Serial.print("."); 
+  }
+  Serial.println("WiFi connected! IP: " + WiFi.localIP().toString());
 
 #ifdef ESP32
-  analogReadResolution(12); // Sesuaikan ADC MQ135
-  analogSetPinAttenuation(0, ADC_11db); // MQ135_ANALOG_PIN = 0
+  analogReadResolution(MQ135_ADC_BIT_RESOLUTION);
+  analogSetPinAttenuation(MQ135_ANALOG_PIN, ADC_11db);
 #endif
 
   // Initialize sensors
