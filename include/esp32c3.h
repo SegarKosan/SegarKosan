@@ -1,11 +1,12 @@
 #pragma once
 // esp32.h — HTTP JSON endpoint /state untuk ESP32/ESP32-C3
-// Header-only. Tidak perlu .cpp terpisah.
 
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <PubSubClient.h>
+#include <WebSocketsClient.h>
+#include <ArduinoJson.h>
 
 namespace Net {
 

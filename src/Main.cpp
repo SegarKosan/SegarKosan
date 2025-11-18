@@ -8,8 +8,6 @@
  * MQ135:     GPIO0 (Analog ADC), GPIO10 (Digital) [unused]
 */
 
-#include <WebSocketsClient.h>
-#include <ArduinoJson.h>
 #include "DHT22.h"
 #include "MQ135.h"
 #include "esp32c3.h"
@@ -57,14 +55,11 @@ void setup() {
   Serial.begin(115200);
   Serial.println(F("=== SegarKosan on ESP32-C3 ==="));
   
-  // Connect to WiFi
-  WiFi.begin(ssid, password);
-  Serial.print("🔌 Connecting to WiFi");
-  while (WiFi.status() != WL_CONNECTED) { 
-    delay(500); 
-    Serial.print("."); 
-  }
-  Serial.println("WiFi connected! IP: " + WiFi.localIP().toString());
+  // Connect to WiFi using Net::begin
+  Net::Config cfg;
+  cfg.ssid = ssid;
+  cfg.pass = password;
+  Net::begin(cfg);
 
 #ifdef ESP32
   analogReadResolution(MQ135_ADC_BIT_RESOLUTION);
@@ -95,6 +90,7 @@ void setup() {
 
 // ====== Loop ======
 void loop() {
+  Net::handle(); // Handle Net tasks (WebServer, MQTT if enabled)
   webSocket.loop();
 
   unsigned long now = millis();
