@@ -12,6 +12,7 @@
 #include "MQ135.h"
 #include "esp32c3.h"
 #include "SSH1106.h"
+#include <time.h>
 
 #undef MQ135_VOLTAGE_RESOLUTION
 #define MQ135_VOLTAGE_RESOLUTION 3.3f
@@ -78,7 +79,9 @@ void setup() {
   // Initialize OLED
   if (!oled.begin()) { Serial.println(F("❌ SH1106 allocation failed")); while (1); }
   oled.clear();
-  Serial.println(F("✅ SH1106 display initialized"));
+  oled.displayBootupMessage();
+  delay(1500);
+  Serial.println(F("[INFO] SH1106 display initialized"));
 
   // WebSocket
   webSocket.begin(websocket_server, websocket_port, "/");
@@ -100,6 +103,8 @@ void loop() {
 
     if (!dht22.isValidReading(temperature, humidity)) {
       Serial.println(F("[ERROR] DHT22 read failed"));
+      oled.displayError("DHT22 Error");
+      oled.show();
       return;
     }
 
@@ -118,13 +123,13 @@ void loop() {
       co2ppm = NAN;
       filled = 0; // Optionally reset buffer to avoid contamination
     } else {
-    buf[idx] = co2_raw;
-    idx = (idx + 1) % N;
-    if (filled < N) filled++;
-    float sum = 0;
-    for (int i = 0; i < filled; i++) sum += buf[i];
+      buf[idx] = co2_raw;
+      idx = (idx + 1) % N;
+      if (filled < N) filled++;
+      float sum = 0;
+      for (int i = 0; i < filled; i++) sum += buf[i];
       co2ppm = sum / filled;
-    if (!isfinite(co2ppm) || co2ppm <= 0 || co2ppm > 50000) co2ppm = NAN;
+      if (!isfinite(co2ppm) || co2ppm <= 0 || co2ppm > 50000) co2ppm = NAN;
     }
 
     // Serial debug
@@ -134,6 +139,7 @@ void loop() {
     Serial.print(F("CO2: ")); if(isfinite(co2ppm)) Serial.println(co2ppm,0); else Serial.println(F("ERR"));
 
     // OLED
+    oled.displayHeader();
     oled.displayDHT22(temperature, humidity, heatIndex);
     oled.displayMQ135(co2ppm);
     oled.show();

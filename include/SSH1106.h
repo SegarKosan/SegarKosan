@@ -53,7 +53,29 @@ public:
     display.display();
   }
 
-  void displayDHT22(float temperature, float humidity, float heatIndex) {
+  void displayBootupMessage() {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SH110X_WHITE);
+    display.setCursor(10, 20);
+    display.println(F("SegarKosan"));
+    display.display();
+
+    // Animate the "Initializing" line with a simple dot loading effect
+    const uint8_t lineY = 35;
+    for (uint8_t dots = 0; dots <= 3; dots++) {
+      display.fillRect(0, lineY - 2, SCREEN_WIDTH, 12, SH110X_BLACK);
+      display.setCursor(10, lineY);
+      display.print(F("Initializing"));
+      for (uint8_t i = 0; i < dots; i++) {
+        display.print('.');
+      }
+      display.display();
+      delay(250);
+    }
+  }
+
+  void displayHeader() {
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SH110X_WHITE);
@@ -67,7 +89,12 @@ public:
     // Draw box
     display.drawRect(0, 0, 128, 64, SH110X_WHITE);
     display.drawLine(0, 8, 128, 8, SH110X_WHITE);
-    
+  }
+
+  void displayDHT22(float temperature, float humidity, float heatIndex) {
+    display.setTextSize(1);
+    display.setTextColor(SH110X_WHITE);
+
     // Display temperature
     display.setCursor(2, 20);
     display.print(F("Temp : ")); 
@@ -87,7 +114,6 @@ public:
     display.println(F(" C"));
   }
 
-  // Append a one-line gas reading at the bottom of the framed area
   void displayMQ135(float gasPpm) {
     display.setTextSize(1);
     display.setTextColor(SH110X_WHITE);
@@ -95,6 +121,20 @@ public:
     display.print(F("CO2: "));
     display.print(gasPpm, 0);
     display.print(F("ppm "));
+  }
+
+  void displayError(const char* message) {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SH110X_WHITE);
+    display.setCursor(0, 20);
+    display.println(F("Error:"));
+    display.println(message);
+    display.display();
+  }
+
+  void print(const char* message) {
+    display.println(message);
   }
 };
 
