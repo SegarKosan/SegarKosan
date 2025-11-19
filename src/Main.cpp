@@ -3,9 +3,9 @@
  * 
  * PIN CONFIGURATION (ESP32-C3):
  * =============================
- * DHT22:     GPIO4 (Digital)
+ * DHT22:     GPIO3 (Analog ADC)
  * SH1106:    GPIO8 (SDA), GPIO9 (SCL) - I2C
- * MQ135:     GPIO0 (Analog ADC), GPIO10 (Digital) [unused]
+ * MQ135:     GPIO2 (Analog ADC)
 */
 
 #include "DHT22.h"
@@ -18,9 +18,7 @@
 #undef MQ135_ADC_BIT_RESOLUTION
 #define MQ135_ADC_BIT_RESOLUTION 12
 #undef MQ135_ANALOG_PIN
-#define MQ135_ANALOG_PIN 0   // GPIO0 (Analog ADC) 
-#undef MQ135_DIGITAL_PIN
-#define MQ135_DIGITAL_PIN 10  // GPIO10 (DOUT) [unused]
+#define MQ135_ANALOG_PIN 0   // GPIO2 (Analog ADC) 
 
 DHT22Sensor dht22;
 SH1106Display oled;
