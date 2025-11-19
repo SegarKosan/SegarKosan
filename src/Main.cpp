@@ -113,13 +113,21 @@ void loop() {
     static float buf[N];
     static int idx = 0, filled = 0;
     float co2_raw = mq135.readCO2();
+    float co2ppm = NAN;
+    
+    if (!isfinite(co2_raw) || co2_raw <= 0 || co2_raw > 50000) {
+      Serial.println(F("[WARN] Invalid CO2 raw reading, skipping average update"));
+      co2ppm = NAN;
+      filled = 0; // Optionally reset buffer to avoid contamination
+    } else {
     buf[idx] = co2_raw;
     idx = (idx + 1) % N;
     if (filled < N) filled++;
     float sum = 0;
     for (int i = 0; i < filled; i++) sum += buf[i];
-    float co2ppm = sum / filled;
+      co2ppm = sum / filled;
     if (!isfinite(co2ppm) || co2ppm <= 0 || co2ppm > 50000) co2ppm = NAN;
+    }
 
     // Serial debug
     Serial.print(F("Temp: ")); Serial.print(temperature,1); Serial.print("°C  ");
