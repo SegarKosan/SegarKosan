@@ -140,8 +140,19 @@ void loop() {
     doc["payload"]["humidity"] = humidity;
     doc["payload"]["heat_index"] = heatIndex;
     doc["payload"]["co2"] = isfinite(co2ppm) ? co2ppm : -1;
-    doc["timestamp"] = millis();
-    String json; serializeJson(doc, json);
+    time_t epoch = time(nullptr);
+    doc["timestamp"] = (epoch > 0) ? static_cast<long>(epoch) : static_cast<long>(millis() / 1000);
+
+    String json; 
+    if (serializeJson(doc, json) == 0) {
+      Serial.println(F("[ERROR] JSON serialization failed"));
+      return;
+    }
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println(F("[WARN] WiFi disconnected, skipping send"));
+      return;
+    }
+
     webSocket.sendTXT(json);
     Serial.print(F("📤 Sent data to server: "));
     Serial.println(json);
