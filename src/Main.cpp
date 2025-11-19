@@ -52,8 +52,16 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
 
 void setup() {
   Serial.begin(115200);
+  
   Serial.println(F("=== SegarKosan on ESP32-C3 ==="));
   
+  // Initialize OLED
+  if (!oled.begin()) { Serial.println(F("❌ SH1106 allocation failed")); while (1); }
+  oled.clear();
+  oled.displayBootupMessage();
+  delay(1500);
+  Serial.println(F("[INFO] SH1106 display initialized"));
+
   // Connect to WiFi using Net::begin
   Net::Config cfg;
   cfg.ssid = ssid;
@@ -75,13 +83,6 @@ void setup() {
   while (millis() - wstart < warmupMs) { mq135.update(); delay(50); }
   mq135.begin(100, 100); // 100 samples, 100ms interval
   Serial.print(F("MQ-135 R0 = ")); Serial.println(mq135.getR0(), 3);
-
-  // Initialize OLED
-  if (!oled.begin()) { Serial.println(F("❌ SH1106 allocation failed")); while (1); }
-  oled.clear();
-  oled.displayBootupMessage();
-  delay(1500);
-  Serial.println(F("[INFO] SH1106 display initialized"));
 
   // WebSocket
   webSocket.begin(websocket_server, websocket_port, "/");
