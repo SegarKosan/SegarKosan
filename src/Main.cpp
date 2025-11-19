@@ -38,13 +38,13 @@ const uint16_t websocket_port = 8080;
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
   switch (type) {
     case WStype_CONNECTED:
-      Serial.println("Connected to WebSocket Server!");
+      Serial.println("[INFO] Connected to WebSocket Server!");
       break;
     case WStype_DISCONNECTED:
-      Serial.println("Disconnected from server! Reconnecting...");
+      Serial.println("[INFO] Disconnected from server! Reconnecting...");
       break;
     case WStype_TEXT:
-      Serial.printf("Message from server: %s\n", payload);
+      Serial.printf("[INFO] Message from server: %s\n", payload);
       break;
     default:
       break;
@@ -101,7 +101,7 @@ void loop() {
     float temperature = dht22.readTemperature();
 
     if (!dht22.isValidReading(temperature, humidity)) {
-      Serial.println(F("⚠️ DHT22 read failed"));
+      Serial.println(F("[ERROR] DHT22 read failed"));
       return;
     }
 
@@ -162,7 +162,7 @@ void loop() {
     }
 
     webSocket.sendTXT(json);
-    Serial.print(F("📤 Sent data to server: "));
+    Serial.print(F("[INFO] Sent data to server: "));
     Serial.println(json);
   }
 }
