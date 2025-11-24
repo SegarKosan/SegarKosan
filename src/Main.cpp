@@ -28,7 +28,7 @@ WebSocketsClient webSocket;
 unsigned long lastSend = 0;
 
 // WiFi & Websocket Config
-const char* ssid = "Ersyadha_32";
+const char* ssid = "ERSYADHA";
 const char* password = "ersyadha123";
 const char* websocket_server = "192.168.18.115"; 
 const uint16_t websocket_port = 8080;
@@ -56,7 +56,7 @@ void setup() {
   Serial.println(F("=== SegarKosan on ESP32-C3 ==="));
   
   // Initialize OLED
-  if (!oled.begin()) { Serial.println(F("❌ SH1106 allocation failed")); while (1); }
+  if (!oled.begin()) { Serial.println(F("[ERROR] SH1106 allocation failed")); while (1); }
   oled.clear();
   oled.displayBootupMessage();
   delay(1500);
@@ -76,11 +76,9 @@ void setup() {
   // Initialize sensors
   dht22.begin();
 
-  // MQ135 warm-up & calibration
-  Serial.println(F("Calibrating MQ-135 in clean air..."));
-  const unsigned long warmupMs = 5000; // 5s warm-up
-  unsigned long wstart = millis();
-  while (millis() - wstart < warmupMs) { mq135.update(); delay(50); }
+  // MQ135 preheat & calibration
+  Serial.println(F("Preheating MQ-135 in clean air (30s)..."));
+  mq135.preheat();
   mq135.begin(100, 100); // 100 samples, 100ms interval
   Serial.print(F("MQ-135 R0 = ")); Serial.println(mq135.getR0(), 3);
 

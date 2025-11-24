@@ -42,6 +42,15 @@ public:
 			digitalPin(MQ135_DIGITAL_PIN),
 			calibrated(false) {}
 
+	// Keep the sensor energized in clean air so the baseline stabilizes before calibration
+	void preheat(unsigned long durationMs = 30000, unsigned long updateIntervalMs = 50) {
+		unsigned long start = millis();
+		while (millis() - start < durationMs) {
+			mq.update();
+			delay(updateIntervalMs);
+		}
+	}
+
 	// Perform basic initialization and calibration. Place the sensor in clean air.
 	void begin(unsigned long calibrationSamples = 10, unsigned long sampleIntervalMs = 100) {
 		pinMode(digitalPin, INPUT);
