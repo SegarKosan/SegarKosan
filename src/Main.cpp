@@ -22,10 +22,10 @@ WebSocketsClient webSocket;
 unsigned long lastSend = 0;
 
 // WiFi & Websocket Config
-const char* ssid = "ERSYADHA";
-const char* password = "ersyadha123";
-const char* websocket_server = "192.168.18.115"; 
-const uint16_t websocket_port = 8080;
+const char* ssid = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
+const char* websocket_server = WEBSOCKET_SERVER; 
+const uint16_t websocket_port = WEBSOCKET_PORT;
 
 // Event Handler WebSocket 
 void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
