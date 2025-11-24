@@ -1,12 +1,12 @@
 #pragma once
 // esp32.h — HTTP JSON endpoint /state untuk ESP32/ESP32-C3
-// Header-only. Tidak perlu .cpp terpisah.
 
-#include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <PubSubClient.h>
+#include <WebSocketsClient.h>
+#include <ArduinoJson.h>
 
 namespace Net {
 
@@ -245,6 +245,10 @@ inline void _handleMqtt() {
 }
 
 inline void begin(const Config& cfg = Config{}) {
+  // Register optional MQ135 callbacks if provided
+  cbReadR0() = cfg.readR0;
+  cbRecal()  = cfg.recalibrate;
+
   // Mode STA
   WiFi.mode(WIFI_STA);
   WiFi.setTxPower(WIFI_POWER_8_5dBm);
@@ -529,4 +533,4 @@ inline bool reconnect() {
   return false;
 }
 
-} // IMPORTANT namespace Net
+} 

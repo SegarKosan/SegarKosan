@@ -1,4 +1,3 @@
-
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
@@ -28,6 +27,7 @@ private:
 
 public:
   SH1106Display() : display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET) {}
+  
 
   bool begin() {
     // Initialize I2C; on ESP32-family allow specifying pins
@@ -53,7 +53,102 @@ public:
     display.display();
   }
 
-  void displayDHT22(float temperature, float humidity, float heatIndex) {
+  void displayBootupMessage(const char* status, int progressPercent, int animationStep = -1) {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SH110X_WHITE);
+    
+    // Header
+    display.setCursor(4, 10);
+    display.setTextSize(2);
+
+    display.println(F("SegarKosan"));
+
+    // Status with optional dot animation
+    display.setCursor(10, 40);
+    display.setTextSize(1);
+    display.print(status);
+    if (animationStep >= 0) {
+      int dots = animationStep % 4;
+      for (int i = 0; i < dots; i++) display.print('.');
+    }
+
+    // Progress Bar
+    display.drawRect(10, 50, 108, 10, SH110X_WHITE);
+    int barWidth = map(progressPercent, 0, 100, 0, 104);
+    if (barWidth > 104) barWidth = 104;
+    display.fillRect(12, 52, barWidth, 6, SH110X_WHITE);
+
+    display.display();
+  }
+
+  void displayPage(int page, float temp, float hum, float heatIndex, float co2) {
+    display.clearDisplay();
+    display.setTextColor(SH110X_WHITE);
+    
+    switch (page) {
+      case 1:
+        display.setTextSize(1);
+        display.setCursor(30, 0);
+        display.println(F("Temperature"));
+        display.setTextSize(2);
+        display.setCursor(28, 28);
+        display.print(temp, 1);
+        display.setFont(&Picopixel);
+        display.print(" o");
+        display.setFont(NULL);
+        display.println(F("C"));
+        break;
+      case 2:
+        display.setTextSize(1);
+        display.setCursor(40, 0);
+        display.println(F("Humidity"));
+        display.setTextSize(2);
+        display.setCursor(28, 28);
+        display.print(hum, 1);
+        display.println(F(" %"));
+        break;
+      case 3:
+        display.setTextSize(1);
+        display.setCursor(35, 0);
+        display.print(F("Feels Like"));
+        display.setTextSize(2);
+        display.setCursor(30, 28);
+        display.print(heatIndex, 1);
+        display.setFont(&Picopixel);
+        display.print(" o");
+        display.setFont(NULL);
+        display.println(F("C"));
+        break;
+      case 4:
+        display.setTextSize(1);
+        display.setCursor(37, 0);
+        display.print(F("CO"));
+        display.setFont(&Picopixel);
+        display.print(F("2"));
+        display.setFont(NULL);
+        display.print(F(" Level"));
+        display.setTextSize(2);
+        display.setCursor(34, 28);
+        display.print(co2, 0);
+        display.println(F(" ppm"));
+        break;
+      default:
+        display.setTextSize(2);
+        display.setCursor(0, 10);
+        display.println(F("SegarKosan"));
+        display.setTextSize(1);
+        display.setCursor(0, 35);
+        display.println(F("Made by"));
+        display.setCursor(0, 45);
+        display.println(F("Morning Group"));
+        break;
+    }
+    display.display();
+  }
+
+  [[deprecated("displayHeader() is deprecated and will be removed in a future release.")]]
+  void displayHeader() {
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SH110X_WHITE);
@@ -67,16 +162,21 @@ public:
     // Draw box
     display.drawRect(0, 0, 128, 64, SH110X_WHITE);
     display.drawLine(0, 8, 128, 8, SH110X_WHITE);
-    
+  }
+
+  void displayDHT22(float temperature, float humidity, float heatIndex) {
+    display.setTextSize(1);
+    display.setTextColor(SH110X_WHITE);
+
     // Display temperature
     display.setCursor(2, 20);
-    display.print(F("Temp : ")); 
+    display.print(F("🌡 : ")); 
     display.print(temperature, 1); 
     display.println(F(" C"));
     
     // Display humidity
     display.setCursor(2, 32);
-    display.print(F("Humidity : ")); 
+    display.print(F("🌢 : ")); 
     display.print(humidity, 1); 
     display.println(F(" %"));
     
@@ -87,7 +187,6 @@ public:
     display.println(F(" C"));
   }
 
-  // Append a one-line gas reading at the bottom of the framed area
   void displayMQ135(float gasPpm) {
     display.setTextSize(1);
     display.setTextColor(SH110X_WHITE);
@@ -95,6 +194,20 @@ public:
     display.print(F("CO2: "));
     display.print(gasPpm, 0);
     display.print(F("ppm "));
+  }
+
+  void displayError(const char* message) {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SH110X_WHITE);
+    display.setCursor(0, 20);
+    display.println(F("Error:"));
+    display.println(message);
+    display.display();
+  }
+
+  void print(const char* message) {
+    display.println(message);
   }
 };
 

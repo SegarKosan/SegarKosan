@@ -1,230 +1,188 @@
 /*
- * ESP32-C3 Odor Sensor Project
+ * SegarKosan: Smart Kosan with Odor Detection
  * 
  * PIN CONFIGURATION (ESP32-C3):
  * =============================
- * DHT22:     GPIO4 (Digital)
+ * DHT22:     GPIO3 (Analog ADC)
  * SH1106:    GPIO8 (SDA), GPIO9 (SCL) - I2C
- * MQ135:     GPIO0 (Analog ADC), GPIO10 (Digital)
- * 
- * IMPORTANT NOTES:
- * - ESP32-C3 ADC-capable pins: GPIO0, GPIO1, GPIO2, GPIO3, GPIO4
- * - GPIO0: Boot mode pin (pulled LOW = download mode). Avoid if possible or ensure it's not pulled LOW during boot
- * - GPIO1-4: Safe for ADC usage
- * - GPIO8, GPIO9: Default I2C pins for many ESP32-C3 boards
- * 
- * If you experience boot issues with GPIO0, change MQ135_ANALOG_PIN to GPIO4
- * and move DHT22 to another available GPIO (e.g., GPIO5, GPIO6, GPIO7)
- */
+ * MQ135:     GPIO2 (Analog ADC)
+*/
 
-#include <Arduino.h>
-
-// Display and DHT headers
-#include "SSH1106.h"
 #include "DHT22.h"
-#include "esp32c3.h" 
-
-// MQ135 configuration MUST be defined BEFORE including MQ135.h
-#undef MQ135_BOARD
-#define MQ135_BOARD "ESP-32"
-#undef MQ135_VOLTAGE_RESOLUTION
-#define MQ135_VOLTAGE_RESOLUTION 3.3f
-#undef MQ135_ADC_BIT_RESOLUTION
-#define MQ135_ADC_BIT_RESOLUTION 12
-#undef MQ135_ANALOG_PIN
-// ESP32-C3 Valid ADC Pins: GPIO0, GPIO1, GPIO2, GPIO3, GPIO4
-// Recommended: GPIO0 or GPIO4 (GPIO0 may affect boot if pulled LOW)
-// If boot issues occur, use GPIO4 instead
-#define MQ135_ANALOG_PIN 0   // GPIO0 (ADC1_CH0) - Valid ADC pin on ESP32-C3
-#undef MQ135_DIGITAL_PIN
-#define MQ135_DIGITAL_PIN 10  // GPIO10 (Digital DOUT) - Changed from GPIO1 to avoid conflicts
-
 #include "MQ135.h"
+#include "esp32c3.h"
+#include "SSH1106.h"
+#include <time.h>
+
 
 DHT22Sensor dht22;
 SH1106Display oled;
 MQ135Sensor mq135;
+WebSocketsClient webSocket;
+unsigned long lastSend = 0;
+
+// WiFi & Websocket Config
+const char* ssid = "ERSYADHA";
+const char* password = "ersyadha123";
+const char* websocket_server = "192.168.18.115"; 
+const uint16_t websocket_port = 8080;
+
+// Event Handler WebSocket 
+void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
+  switch (type) {
+    case WStype_CONNECTED:
+      Serial.println("[INFO] Connected to WebSocket Server!");
+      break;
+    case WStype_DISCONNECTED:
+      Serial.println("[INFO] Disconnected from server! Reconnecting...");
+      break;
+    case WStype_TEXT:
+      Serial.printf("[INFO] Message from server: %s\n", payload);
+      break;
+    default:
+      break;
+  }
+}
 
 void setup() {
-  Serial.begin(9600);
-  delay(2000);
+  Serial.begin(115200);
   
-  Serial.println(F("=== ESP32-C3 Odor Sensor Starting ==="));
+  Serial.println(F("=== SegarKosan on ESP32-C3 ==="));
   
-#ifdef ESP32
-  // Ensure ADC resolution matches our MQ135 configuration on ESP32-C3
-  analogReadResolution(MQ135_ADC_BIT_RESOLUTION);
-  // Use full-scale attenuation for up to ~3.3V input range on ESP32-C3 ADC
-  analogSetPinAttenuation(MQ135_ANALOG_PIN, ADC_11db);
-  Serial.print(F("ADC configured: Pin=GPIO"));
-  Serial.print(MQ135_ANALOG_PIN);
-  Serial.print(F(", Resolution="));
-  Serial.print(MQ135_ADC_BIT_RESOLUTION);
-  Serial.println(F(" bits"));
-#endif
-  
-  // Initialize DHT22 sensor
-  dht22.begin();
-  Serial.println(F("DHT22 initialized"));
-
-  // Initialize OLED display (this will initialize I2C)
-  if (!oled.begin()) {
-    Serial.println(F("SH1106 allocation failed"));
-    while (1);
-  }
+  // Initialize OLED
+  if (!oled.begin()) { Serial.println(F("[ERROR] SH1106 allocation failed")); while (1) { delay(1000); } }
   oled.clear();
-  Serial.println(F("SH1106 display initialized"));
-
-  // Initialize MQ-135 (place in clean air during calibration)
-  Serial.println(F("Calibrating MQ-135 in clean air..."));
-  // Warm-up the heater for more stable R0 (initial burn-in may need much longer)
-  const unsigned long warmupMs = 5000; // 5s warm-up (increase for better stability)
-  unsigned long wstart = millis();
-  while (millis() - wstart < warmupMs) {
-    mq135.update();
-    delay(50);
+  // Animate Initializing
+  for (int i = 0; i < 6; i++) {
+    oled.displayBootupMessage("Initializing", 10, i);
+    delay(250);
   }
+  Serial.println(F("[INFO] SH1106 display initialized"));
+
+  // Connect to WiFi using Net::begin
+  oled.displayBootupMessage("Networking", 30, 0);
+  Net::Config cfg;
+  cfg.ssid = ssid;
+  cfg.pass = password;
+  Net::begin(cfg);
+
+  // Initialize sensors
+  Serial.println(F("Start DHT22..."));
+  dht22.begin();
+
+  // MQ135 preheat
+  oled.displayBootupMessage("Preheating", 40, 0);
+  Serial.println(F("Preheating MQ-135 in clean air (30s)..."));
+  mq135.preheat(30000, 50, [](int remaining) {
+    static int frame = 0;
+    static unsigned long lastFrame = 0;
+    unsigned long now = millis();
+    // Update animation every 250ms
+    if (now - lastFrame > 250) {
+      int progress = map(30 - remaining, 0, 30, 40, 90);
+      oled.displayBootupMessage("Preheating", progress, frame++);
+      lastFrame = now;
+    }
+  });
   mq135.begin(100, 100); // 100 samples, 100ms interval
   Serial.print(F("MQ-135 R0 = ")); Serial.println(mq135.getR0(), 3);
 
-  Net::Config cfg;
-  cfg.ssid = "morning";
-  cfg.pass = "12345678";
-  cfg.hostname = "SegarKosan"; // mDNS: http://SegarKosan.local/ 
-  // cfg.sta_ip = IPAddress(192,168,23,230);
-  // cfg.sta_gw = IPAddress(192,168,1,1);
-  // cfg.sta_sn = IPAddress(255,255,255,0);
-  // cfg.sta_dns1 = IPAddress(192,168,1,1);
-  
-  // MQTT Configuration (uncomment and configure to enable MQTT)
-  // cfg.mqtt_server = "broker.hivemq.com";  // or your MQTT broker IP/domain
-  // cfg.mqtt_port = 1883;
-  // cfg.mqtt_user = nullptr;  // set if broker requires auth
-  // cfg.mqtt_pass = nullptr;
-  // cfg.mqtt_client_id = "esp32c3-room204";
-  // cfg.mqtt_topic = "kosan/room204/sensors";
-  // cfg.room_id = "204";
-  // cfg.mqtt_interval_ms = 5000; // publish every 5 seconds
-  
-  Net::begin(cfg);
-  // Provide MQ135 callbacks for HTTP endpoints
-  Net::cbReadR0() = []() -> float { return mq135.getR0(); };
-  Net::cbRecal() = [](unsigned long samples, unsigned long intervalMs, unsigned long warmupMs) -> bool {
-    // Warm-up before recalibration
-    unsigned long ws = millis();
-    while (millis() - ws < warmupMs) {
-      mq135.update();
-      delay(50);
-    }
-    // Perform calibration with requested parameters
-    mq135.begin(samples, intervalMs);
-    Serial.print(F("[NET] Recalibrated R0 = ")); Serial.println(mq135.getR0(), 3);
-    return true;
-  };
-  unsigned long t = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t < 15000) {
-    delay(100);
-  }
+  oled.displayBootupMessage("Setup Complete!", 100);
+  delay(1000);
 
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi connect failed");
-    WiFi.disconnect(true, true);
-  }
-  Serial.println("");
+  // WebSocket
+  webSocket.begin(websocket_server, websocket_port, "/");
+  webSocket.onEvent(webSocketEvent);
+  webSocket.setReconnectInterval(3000);
 }
 
 void loop() {
-  delay(1500);
-  Net::handle();
-  
-  // Simple serial command handler
-  if (Serial.available()) {
-    String cmd = Serial.readStringUntil('\n');
-    cmd.trim();
-    cmd.toLowerCase();
-    if (cmd == "reboot" || cmd == "restart" || cmd == "reset") {
-      Serial.println(F("[CMD] Reboot requested"));
-      delay(50);
-      ESP.restart();
-    } else if (cmd == "reconnect" || cmd == "wifi reconnect") {
-      Serial.println(F("[CMD] WiFi reconnect requested"));
-      bool ok = Net::reconnect();
-      Serial.print(F("[CMD] Reconnect result: ")); Serial.println(ok ? F("OK") : F("FAIL"));
-    } else if (cmd == "help" || cmd == "?" ) {
-      Serial.println(F("Commands:"));
-      Serial.println(F("  reconnect           - Reconnect WiFi (uses last config)"));
-      Serial.println(F("  reboot|restart|reset- Reboot the ESP32-C3"));
-      Serial.println(F("  help                - Show this help"));
-    } else if (cmd.length() > 0) {
-      Serial.print(F("[CMD] Unknown: ")); Serial.println(cmd);
-      Serial.println(F("Type 'help' for commands."));
+  Net::handle(); // Handle Net tasks (WebServer, MQTT if enabled)
+  webSocket.loop();
+
+  static float lastTemp = 0;
+  static float lastHum = 0;
+  static float lastHI = 0;
+  static float lastCO2 = 0;
+
+  unsigned long now = millis();
+  if (now - lastSend > 5000) {
+    lastSend = now;
+
+    float humidity = dht22.readHumidity();
+    float temperature = dht22.readTemperature();
+
+    if (!dht22.isValidReading(temperature, humidity)) {
+      Serial.println(F("[ERROR] DHT22 read failed"));
+      // Keep last valid values or show error on specific page if needed
+    } else {
+      lastTemp = temperature;
+      lastHum = humidity;
+      lastHI = DHT22Sensor::computeHeatIndex(temperature, humidity);
+    }
+
+    mq135.update();
+    // Moving average CO2
+    static const int N = 5;
+    static float buf[N];
+    static int idx = 0, filled = 0;
+    float co2_raw = mq135.readCO2();
+    float co2ppm = NAN;
+    
+    if (!isfinite(co2_raw) || co2_raw <= 0 || co2_raw > 50000) {
+      Serial.println(F("[WARN] Invalid CO2 raw reading, skipping average update"));
+      co2ppm = NAN;
+      filled = 0; // Optionally reset buffer to avoid contamination
+    } else {
+      buf[idx] = co2_raw;
+      idx = (idx + 1) % N;
+      if (filled < N) filled++;
+      float sum = 0;
+      // Do not reset 'filled' here; preserve historical valid data
+      co2ppm = sum / filled;
+      if (!isfinite(co2ppm) || co2ppm <= 0 || co2ppm > 50000) co2ppm = NAN;
+    }
+    
+    if (isfinite(co2ppm)) {
+      lastCO2 = co2ppm;
+    }
+
+    // Serial debug
+    Serial.print(F("Temp: ")); Serial.print(lastTemp,1); Serial.print("°C  ");
+    Serial.print(F("Hum: ")); Serial.print(lastHum,1); Serial.print("%  ");
+    Serial.print(F("Heat index: ")); Serial.print(lastHI,1); Serial.print("°C  ");
+    Serial.print(F("CO2: ")); Serial.println(lastCO2,0);
+
+    // WebSocket JSON
+    StaticJsonDocument<256> doc;
+    doc["type"] = "sensor";
+    doc["device_id"] = "ESP32-C3";
+    doc["payload"]["temperature"] = lastTemp;
+    doc["payload"]["humidity"] = lastHum;
+    doc["payload"]["heat_index"] = lastHI;
+    doc["payload"]["co2"] = lastCO2;
+    time_t epoch = time(nullptr);
+    doc["timestamp"] = (epoch > 0) ? static_cast<long>(epoch) : static_cast<long>(millis() / 1000);
+
+    String json; 
+    if (serializeJson(doc, json) == 0) {
+      Serial.println(F("[ERROR] JSON serialization failed"));
+    } else if (WiFi.status() != WL_CONNECTED) {
+      Serial.println(F("[WARN] WiFi disconnected, skipping send"));
+    } else {
+      webSocket.sendTXT(json);
+      Serial.print(F("[INFO] Sent data to server: "));
+      Serial.println(json);
     }
   }
-  
-  // Read sensor data
-  float humidity = dht22.readHumidity();
-  float temperature = dht22.readTemperature();
-  // Update MQ135 first, then read a gas value (CO2 approximation)
-  mq135.update();
-  
-  // Optional: simple loop counter for periodic debug if needed
-  static int loopCount = 0;
-  if (++loopCount >= 10) {
-    loopCount = 0;
+
+  // OLED Paging Logic (Every 4s)
+  static unsigned long lastPageChange = 0;
+  static int currentPage = 1;
+  if (now - lastPageChange > 4000) {
+    lastPageChange = now;
+    oled.displayPage(currentPage, lastTemp, lastHum, lastHI, lastCO2);
+    currentPage++;
+    if (currentPage > 5) currentPage = 1;
   }
-  
-  // Simple moving average over N samples to reduce spikes
-  static const int N = 5;
-  static float buf[N];
-  static int idx = 0;
-  static int filled = 0;
-  float co2_raw = mq135.readCO2();
-  
-  // Debug hook left empty to keep timing comparable when needed
-  
-  buf[idx] = co2_raw;
-  idx = (idx + 1) % N;
-  if (filled < N) filled++;
-  float sum = 0;
-  for (int i = 0; i < filled; ++i) sum += buf[i];
-  float co2ppm = sum / filled;
-  // Guard against invalid values from regression at extremes (0 or saturated ADC)
-  if (!isfinite(co2ppm) || co2ppm <= 0 || co2ppm > 50000) {
-    co2ppm = NAN;
-  }
-
-  // Validate readings
-  if (!dht22.isValidReading(temperature, humidity)) {
-    Serial.println(F("DHT22 read failed"));
-    return;
-  }
-
-  // Calculate heat index
-  float heatIndex = DHT22Sensor::computeHeatIndex(temperature, humidity);
-
-  // Print to Serial
-  Serial.print(F("Humidity: "));    Serial.print(humidity, 1);      Serial.print("%    ");
-  Serial.print(F("Temp: "));        Serial.print(temperature, 1);   Serial.print("°C   ");
-  Serial.print(F("Heat index: "));  Serial.print(heatIndex, 1);     Serial.print("°C   ");
-  Serial.print(F("CO2: "));
-  if (isfinite(co2ppm)) {
-    Serial.print(co2ppm, 0); Serial.println(F(" ppm"));
-  } else {
-    Serial.println(F("ERR"));
-  }
-
-  // Display on OLED (environment + gas)
-  oled.displayDHT22(temperature, humidity, heatIndex);
-  oled.displayMQ135(co2ppm);
-  oled.show();
-
-  // Update network state cache for /state endpoint
-  Net::update(temperature, humidity, heatIndex, isfinite(co2ppm) ? co2ppm : 0);
-  
-  // Publish to MQTT if configured (uses stored cfg values from setup)
-  // Will auto-reconnect and respect intervalc
-  static const char* mqttClientId = "room67";
-  static const char* mqttUser = nullptr;
-  static const char* mqttPass = nullptr;
-  Net::publishMqtt(mqttClientId, mqttUser, mqttPass);
 }

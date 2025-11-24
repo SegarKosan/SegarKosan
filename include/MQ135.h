@@ -42,6 +42,27 @@ public:
 			digitalPin(MQ135_DIGITAL_PIN),
 			calibrated(false) {}
 
+	// Keep the sensor energized in clean air so the baseline stabilizes before calibration
+	// Optional callback is called on every loop iteration (approx every updateIntervalMs)
+	void preheat(unsigned long durationMs = 30000, unsigned long updateIntervalMs = 50, void (*callback)(int remainingSec) = nullptr) {
+		unsigned long start = millis();
+		
+		while (millis() - start < durationMs) {
+			mq.update();
+			
+			if (callback) {
+				int remaining = (durationMs - (millis() - start)) / 1000;
+				if (remaining < 0) remaining = 0;
+				callback(remaining);
+				if (remaining == 0) {
+					break;
+				}
+			}
+			
+			delay(updateIntervalMs);
+		}
+	}
+
 	// Perform basic initialization and calibration. Place the sensor in clean air.
 	void begin(unsigned long calibrationSamples = 10, unsigned long sampleIntervalMs = 100) {
 		pinMode(digitalPin, INPUT);
