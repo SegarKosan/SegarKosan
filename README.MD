@@ -186,6 +186,12 @@ SH1106 OLED (I2C):
    - **🔌 Serial Monitor** - Open serial monitor (Ctrl+Alt+S)
    - **📋 Test** - Run unit tests
 
+6. **Configure secrets** (First time only):
+   ```bash
+   cp secret.ini.example secret.ini
+   # Edit secret.ini with your WiFi credentials and server settings
+   ```
+
 7. **Build the project**:
    - Click the **✓ Build** icon in the PlatformIO toolbar
    - Or press `Ctrl+Alt+B` (Windows/Linux) / `Cmd+Alt+B` (Mac)
@@ -208,7 +214,7 @@ SH1106 OLED (I2C):
 10. **Monitor serial output**:
     - Click the **🔌 Serial Monitor** icon in the PlatformIO toolbar
     - Or press `Ctrl+Alt+S` (Windows/Linux) / `Cmd+Alt+S` (Mac)
-   - Set baud rate to **9600** (default in this project)
+    - Set baud rate to **115200** (configured in this project)
     - Watch for WiFi connection status and sensor readings
 
 #### Option 2: Using PlatformIO CLI
@@ -229,7 +235,13 @@ SH1106 OLED (I2C):
    cd SegarKosan
    ```
 
-3. **Install dependencies**:
+3. **Configure secrets**:
+   ```bash
+   cp secret.ini.example secret.ini
+   # Edit secret.ini with your credentials
+   ```
+
+4. **Install dependencies**:
    ```bash
    pio pkg install
    # Dependencies are automatically installed from platformio.ini
@@ -239,7 +251,7 @@ SH1106 OLED (I2C):
    ```bash
    pio run
    # Or specify environment
-   pio run -e Smart-Odor-Detection
+   pio run -e SegarKosan
    ```
 
 5. **Upload to ESP32-C3**:
@@ -253,7 +265,7 @@ SH1106 OLED (I2C):
    ```bash
    pio device monitor
    # Or with specific baud rate
-   pio device monitor --baud 9600
+   pio device monitor --baud 115200
    ```
 
 7. **Build + Upload + Monitor (all in one)**:
@@ -279,7 +291,10 @@ SegarKosan/
 │   └── Main.cpp           # Main application code
 ├── test/                   # Unit tests
 ├── platformio.ini          # PlatformIO configuration
-└── Readme.MD              # This file
+├── secret.ini.example      # Template for credentials (commit this)
+├── secret.ini              # Your actual credentials (DO NOT commit)
+├── .gitignore              # Git ignore file (includes secret.ini)
+└── README.MD               # This file
 ```
 
 #### Troubleshooting PlatformIO
@@ -324,22 +339,34 @@ pio run
 
 ### Configuration
 
-Edit the configuration in `src/Main.cpp` or create a `config.h` file:
+**Important**: Never commit sensitive credentials to Git!
 
-```cpp
-// WiFi Configuration
-const char* WIFI_SSID = "YourWiFiSSID";
-const char* WIFI_PASSWORD = "YourWiFiPassword";
+1. **Copy the example configuration**:
+   ```bash
+   cp secret.ini.example secret.ini
+   ```
 
-// MQTT Configuration
-const char* MQTT_BROKER = "192.168.1.100";
-const int MQTT_PORT = 1883;
-const char* MQTT_TOPIC = "kosan/room1/sensors";
+2. **Edit `secret.ini` with your actual credentials**:
+   ```ini
+   [secret]
+   wifi_ssid = YourWiFiSSID
+   wifi_password = YourWiFiPassword
+   websocket_server = 192.168.1.100
+   websocket_port = 8080
+   ```
 
-// Device Configuration
-const int ROOM_ID = 1;
-const int PUBLISH_INTERVAL = 5000; // milliseconds
-```
+3. **Verify `secret.ini` is in `.gitignore`** (already configured)
+
+4. **Build and upload**:
+   - PlatformIO will automatically inject these values as build flags
+   - The firmware will use these credentials at runtime
+   - No source code changes needed
+
+**How it works**:
+- `platformio.ini` loads `secret.ini` via `extra_configs`
+- Values are injected as preprocessor macros (`WIFI_SSID`, `WIFI_PASSWORD`, etc.)
+- `src/Main.cpp` uses these macros instead of hardcoded strings
+- `secret.ini` is ignored by Git to protect your credentials
 
 ## 📡 API Documentation
 
@@ -496,97 +523,97 @@ Alert notifications are sent via:
 
 ---
 
-### Phase 5: Ngrok Integration + Backend & Database (Day 9-10) 🔄
+### Phase 5: Ngrok Integration + Backend & Database (Day 9-10) ✅
 **Focus**: Public URL via Ngrok, backend API, MongoDB integration
 
 **Deliverables**:
-- [ ] Activate Ngrok tunnel (`ngrok http 3000`)
-- [ ] Set `BACKEND_BASE_URL` in firmware/UI config
-- [ ] Implement `/ingest` endpoint
-- [ ] MongoDB data persistence
-- [ ] Health check endpoint (`/health`)
+- [x] Activate Ngrok tunnel (`ngrok http 3000`)
+- [x] Set `BACKEND_BASE_URL` in firmware/UI config
+- [x] Implement `/ingest` endpoint
+- [x] MongoDB data persistence
+- [x] Health check endpoint (`/health`)
 
-**KPI Target**: HTTP 200 via Ngrok. Write P95 latency ≤ 70ms. Zero 5xx errors.
+**KPI**: ✅ HTTP 200 via Ngrok. Write P95 latency ≤ 70ms. Zero 5xx errors.
 
 ---
 
-### Phase 6: Real-time WebSocket/SSE via Ngrok (Day 11-12) ⏳
+### Phase 6: Real-time WebSocket/SSE via Ngrok (Day 11-12) ✅
 **Focus**: Real-time data streaming through Ngrok domain
 
 **Deliverables**:
-- [ ] WebSocket/SSE broadcast implementation
-- [ ] Configure CORS for `https://*.ngrok.io` origin
-- [ ] Real-time data push to clients
+- [x] WebSocket/SSE broadcast implementation
+- [x] Configure CORS for `https://*.ngrok.io` origin
+- [x] Real-time data push to clients
 
-**KPI Target**: P95 end-to-end latency ≤ 250ms. 0% loss on 10k test messages.
+**KPI**: ✅ P95 end-to-end latency ≤ 250ms. 0% loss on 10k test messages.
 
 ---
 
-### Phase 7: Minimal UI via Ngrok (Day 13-14) ⏳
+### Phase 7: Minimal UI via Ngrok (Day 13-14) ✅
 **Focus**: React dashboard with essential visualizations
 
 **Deliverables**:
-- [ ] React-based web dashboard
-- [ ] Real-time gauge displays
-- [ ] Basic metrics panel
-- [ ] 24-hour historical graph (data from `/history` endpoint)
-- [ ] Environment variable configuration for Ngrok URL
+- [x] React-based web dashboard
+- [x] Real-time gauge displays
+- [x] Basic metrics panel
+- [x] 24-hour historical graph (data from `/history` endpoint)
+- [x] Environment variable configuration for Ngrok URL
 
-**KPI Target**: API TTFB ≤ 250ms. UI load time ≤ 2 seconds.
+**KPI**: ✅ API TTFB ≤ 250ms. UI load time ≤ 2 seconds.
 
 ---
 
-### Phase 8: E2E Testing & URL Rotation (Day 15-16) ⏳
+### Phase 8: E2E Testing & URL Rotation (Day 15-16) ✅
 **Focus**: Stability testing and Ngrok URL management
 
 **Deliverables**:
-- [ ] WiFi disconnect/reconnect testing
-- [ ] Ngrok restart testing
-- [ ] `refresh-ngrok-url` script for environment updates
-- [ ] Automated URL propagation
+- [x] WiFi disconnect/reconnect testing
+- [x] Ngrok restart testing
+- [x] `refresh-ngrok-url` script for environment updates
+- [x] Automated URL propagation
 
-**KPI Target**: Data completeness ≥ 99% over 2 hours. Downtime per rotation < 30 seconds.
+**KPI**: ✅ Data completeness ≥ 99% over 2 hours. Downtime per rotation < 30 seconds.
 
 ---
 
-### Phase 9: Calibration & Thresholds (Day 17-18) ⏳
+### Phase 9: Calibration & Thresholds (Day 17-18) ✅
 **Focus**: Sensor calibration and alert thresholds
 
 **Deliverables**:
-- [ ] ADC to odor score mapping
-- [ ] Initial alert threshold configuration
-- [ ] Document test scenarios
-- [ ] Calibration procedure documentation
+- [x] ADC to odor score mapping
+- [x] Initial alert threshold configuration
+- [x] Document test scenarios
+- [x] Calibration procedure documentation
 
-**KPI Target**: Drift < ±5 points over 15 minutes. False positive alerts ≤ 20%.
+**KPI**: ✅ Drift < ±5 points over 15 minutes. False positive alerts ≤ 20%.
 
 ---
 
-### Phase 10: Hardening & Logging (Day 19-20) ⏳
+### Phase 10: Hardening & Logging (Day 19-20) ✅
 **Focus**: Production readiness and monitoring
 
 **Deliverables**:
-- [ ] Configure `ngrok.yml` (HTTP 3000, TCP 1883 optional)
-- [ ] Implement structured logging
-- [ ] Update README documentation
-- [ ] Error handling improvements
-- [ ] Connection resilience testing
+- [x] Configure `ngrok.yml` (HTTP 3000, TCP 1883 optional)
+- [x] Implement structured logging
+- [x] Update README documentation
+- [x] Error handling improvements
+- [x] Connection resilience testing
 
-**KPI Target**: Tunnel uptime ≥ 95% over 4 hours. Zero crashes.
+**KPI**: ✅ Tunnel uptime ≥ 95% over 4 hours. Zero crashes.
 
 ---
 
-### Phase 11: MVP Release via Ngrok (Day 21-22) ⏳
+### Phase 11: MVP Release via Ngrok (Day 21-22) 🔄
 **Focus**: Final release and documentation
 
 **Deliverables**:
-- [ ] Complete end-to-end demo
-- [ ] Record demo video
-- [ ] Create release tag `mvp-v1`
-- [ ] Final documentation review
-- [ ] Regression testing
+- [] Complete end-to-end demo
+- [] Record demo video
+- [] Create release tag `mvp-v1`
+- [] Final documentation review
+- [x] Regression testing
 
-**KPI Target**: All targets achieved. Regression tests passing.
+**KPI**:  All targets achieved. Regression tests passing.
 
 ---
 
@@ -594,14 +621,14 @@ Alert notifications are sent via:
 
 | Metric | Target | Status |
 |--------|--------|--------|
-| **End-to-end data flow** | Sensors → Backend → Dashboard | ✅ Partial |
-| **Stable operation** | 4+ hours continuous uptime | 🔄 Testing |
-| **Data completeness** | ≥ 99% over 2 hours | ⏳ Pending |
-| **API response time (P95)** | ≤ 250ms | ⏳ Pending |
-| **UI load time** | ≤ 2 seconds | ⏳ Pending |
-| **Alert accuracy** | False positives ≤ 20% | ⏳ Pending |
-| **Documentation** | Complete setup & API docs | ✅ Done |
-| **Release tag** | `mvp-v1` published | ⏳ Day 21-22 |
+| **End-to-end data flow** | Sensors → Backend → Dashboard | ✅ Complete |
+| **Stable operation** | 4+ hours continuous uptime | ✅ Achieved |
+| **Data completeness** | ≥ 99% over 2 hours | ✅ Achieved |
+| **API response time (P95)** | ≤ 250ms | ✅ Achieved |
+| **UI load time** | ≤ 2 seconds | ✅ Achieved |
+| **Alert accuracy** | False positives ≤ 20% | ⏳ Pendin |
+| **Documentation** | Complete setup & API docs | ✅ Partial |
+| **Release tag** | `mvp-v1` published | ⏳ Pending |
 
 ---
 
