@@ -64,6 +64,16 @@ void setup() {
   Net::Config cfg;
   cfg.ssid = ssid;
   cfg.pass = password;
+  cfg.readR0 = []() -> float { return mq135.getR0(); };
+  cfg.recalibrate = [](unsigned long samples, unsigned long intervalMs, unsigned long warmupMs) -> bool {
+    Serial.println(F("[INFO] Recalibrating MQ-135..."));
+    unsigned long wstart = millis();
+    while (millis() - wstart < warmupMs) { mq135.update(); delay(50); }
+    mq135.begin(samples, intervalMs);
+    Serial.print(F("[INFO] MQ-135 R0 = ")); Serial.println(mq135.getR0(), 3);
+    return true;
+  };
+
   Net::begin(cfg);
 
   // Initialize sensors
