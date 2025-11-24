@@ -14,12 +14,6 @@
 #include "SSH1106.h"
 #include <time.h>
 
-#undef MQ135_VOLTAGE_RESOLUTION
-#define MQ135_VOLTAGE_RESOLUTION 3.3f
-#undef MQ135_ADC_BIT_RESOLUTION
-#define MQ135_ADC_BIT_RESOLUTION 12
-#undef MQ135_ANALOG_PIN
-#define MQ135_ANALOG_PIN 0   // GPIO2 (Analog ADC) 
 
 DHT22Sensor dht22;
 SH1106Display oled;
@@ -56,7 +50,7 @@ void setup() {
   Serial.println(F("=== SegarKosan on ESP32-C3 ==="));
   
   // Initialize OLED
-  if (!oled.begin()) { Serial.println(F("[ERROR] SH1106 allocation failed")); while (1); }
+  if (!oled.begin()) { Serial.println(F("[ERROR] SH1106 allocation failed")); while (1) { delay(1000); } }
   oled.clear();
   // Animate Initializing
   for (int i = 0; i < 6; i++) {
@@ -102,7 +96,6 @@ void setup() {
   webSocket.setReconnectInterval(3000);
 }
 
-// ====== Loop ======
 void loop() {
   Net::handle(); // Handle Net tasks (WebServer, MQTT if enabled)
   webSocket.loop();
@@ -145,7 +138,7 @@ void loop() {
       idx = (idx + 1) % N;
       if (filled < N) filled++;
       float sum = 0;
-      for (int i = 0; i < filled; i++) sum += buf[i];
+      // Do not reset 'filled' here; preserve historical valid data
       co2ppm = sum / filled;
       if (!isfinite(co2ppm) || co2ppm <= 0 || co2ppm > 50000) co2ppm = NAN;
     }

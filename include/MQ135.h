@@ -54,12 +54,13 @@ public:
 				int remaining = (durationMs - (millis() - start)) / 1000;
 				if (remaining < 0) remaining = 0;
 				callback(remaining);
+				if (remaining == 0) {
+					break;
+				}
 			}
 			
 			delay(updateIntervalMs);
 		}
-		// Ensure 0 is shown at the end
-		if (callback) callback(0);
 	}
 
 	// Perform basic initialization and calibration. Place the sensor in clean air.

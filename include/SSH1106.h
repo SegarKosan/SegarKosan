@@ -147,7 +147,8 @@ public:
     display.display();
   }
 
-  void displayHeader() {  // Deprecated
+  [[deprecated("displayHeader() is deprecated and will be removed in a future release.")]]
+  void displayHeader() {
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SH110X_WHITE);
