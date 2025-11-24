@@ -43,12 +43,23 @@ public:
 			calibrated(false) {}
 
 	// Keep the sensor energized in clean air so the baseline stabilizes before calibration
-	void preheat(unsigned long durationMs = 30000, unsigned long updateIntervalMs = 50) {
+	// Optional callback is called on every loop iteration (approx every updateIntervalMs)
+	void preheat(unsigned long durationMs = 30000, unsigned long updateIntervalMs = 50, void (*callback)(int remainingSec) = nullptr) {
 		unsigned long start = millis();
+		
 		while (millis() - start < durationMs) {
 			mq.update();
+			
+			if (callback) {
+				int remaining = (durationMs - (millis() - start)) / 1000;
+				if (remaining < 0) remaining = 0;
+				callback(remaining);
+			}
+			
 			delay(updateIntervalMs);
 		}
+		// Ensure 0 is shown at the end
+		if (callback) callback(0);
 	}
 
 	// Perform basic initialization and calibration. Place the sensor in clean air.

@@ -58,29 +58,43 @@ void setup() {
   // Initialize OLED
   if (!oled.begin()) { Serial.println(F("[ERROR] SH1106 allocation failed")); while (1); }
   oled.clear();
-  oled.displayBootupMessage();
-  delay(1500);
+  // Animate Initializing
+  for (int i = 0; i < 6; i++) {
+    oled.displayBootupMessage("Initializing", 10, i);
+    delay(250);
+  }
   Serial.println(F("[INFO] SH1106 display initialized"));
 
   // Connect to WiFi using Net::begin
+  oled.displayBootupMessage("Connecting WiFi", 30, 0);
   Net::Config cfg;
   cfg.ssid = ssid;
   cfg.pass = password;
   Net::begin(cfg);
 
-#ifdef ESP32
-  analogReadResolution(MQ135_ADC_BIT_RESOLUTION);
-  analogSetPinAttenuation(MQ135_ANALOG_PIN, ADC_11db);
-#endif
-
   // Initialize sensors
+  Serial.println(F("Start DHT22..."));
   dht22.begin();
 
-  // MQ135 preheat & calibration
+  // MQ135 preheat
+  oled.displayBootupMessage("Preheating", 40, 0);
   Serial.println(F("Preheating MQ-135 in clean air (30s)..."));
-  mq135.preheat();
+  mq135.preheat(30000, 50, [](int remaining) {
+    static int frame = 0;
+    static unsigned long lastFrame = 0;
+    unsigned long now = millis();
+    // Update animation every 250ms
+    if (now - lastFrame > 250) {
+      int progress = map(30 - remaining, 0, 30, 40, 90);
+      oled.displayBootupMessage("Preheating", progress, frame++);
+      lastFrame = now;
+    }
+  });
   mq135.begin(100, 100); // 100 samples, 100ms interval
   Serial.print(F("MQ-135 R0 = ")); Serial.println(mq135.getR0(), 3);
+
+  oled.displayBootupMessage("Setup Complete!", 100);
+  delay(1000);
 
   // WebSocket
   webSocket.begin(websocket_server, websocket_port, "/");

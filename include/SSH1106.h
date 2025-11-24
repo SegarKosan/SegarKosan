@@ -1,4 +1,3 @@
-
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
@@ -53,26 +52,30 @@ public:
     display.display();
   }
 
-  void displayBootupMessage() {
+  void displayBootupMessage(const char* status, int progressPercent, int animationStep = -1) {
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SH110X_WHITE);
-    display.setCursor(10, 20);
+    
+    // Header
+    display.setCursor(10, 10);
     display.println(F("SegarKosan"));
-    display.display();
 
-    // Animate the "Initializing" line with a simple dot loading effect
-    const uint8_t lineY = 35;
-    for (uint8_t dots = 0; dots <= 3; dots++) {
-      display.fillRect(0, lineY - 2, SCREEN_WIDTH, 12, SH110X_BLACK);
-      display.setCursor(10, lineY);
-      display.print(F("Initializing"));
-      for (uint8_t i = 0; i < dots; i++) {
-        display.print('.');
-      }
-      display.display();
-      delay(250);
+    // Status with optional dot animation
+    display.setCursor(10, 30);
+    display.print(status);
+    if (animationStep >= 0) {
+      int dots = animationStep % 4;
+      for (int i = 0; i < dots; i++) display.print('.');
     }
+
+    // Progress Bar
+    display.drawRect(10, 45, 108, 10, SH110X_WHITE);
+    int barWidth = map(progressPercent, 0, 100, 0, 104);
+    if (barWidth > 104) barWidth = 104;
+    display.fillRect(12, 47, barWidth, 6, SH110X_WHITE);
+
+    display.display();
   }
 
   void displayHeader() {
@@ -97,13 +100,13 @@ public:
 
     // Display temperature
     display.setCursor(2, 20);
-    display.print(F("Temp : ")); 
+    display.print(F("🌡 : ")); 
     display.print(temperature, 1); 
     display.println(F(" C"));
     
     // Display humidity
     display.setCursor(2, 32);
-    display.print(F("Humidity : ")); 
+    display.print(F("🌢 : ")); 
     display.print(humidity, 1); 
     display.println(F(" %"));
     
