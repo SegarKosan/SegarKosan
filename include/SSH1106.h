@@ -27,6 +27,7 @@ private:
 
 public:
   SH1106Display() : display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET) {}
+  
 
   bool begin() {
     // Initialize I2C; on ESP32-family allow specifying pins
@@ -58,11 +59,14 @@ public:
     display.setTextColor(SH110X_WHITE);
     
     // Header
-    display.setCursor(10, 10);
+    display.setCursor(4, 10);
+    display.setTextSize(2);
+
     display.println(F("SegarKosan"));
 
     // Status with optional dot animation
-    display.setCursor(10, 30);
+    display.setCursor(10, 40);
+    display.setTextSize(1);
     display.print(status);
     if (animationStep >= 0) {
       int dots = animationStep % 4;
@@ -70,15 +74,80 @@ public:
     }
 
     // Progress Bar
-    display.drawRect(10, 45, 108, 10, SH110X_WHITE);
+    display.drawRect(10, 50, 108, 10, SH110X_WHITE);
     int barWidth = map(progressPercent, 0, 100, 0, 104);
     if (barWidth > 104) barWidth = 104;
-    display.fillRect(12, 47, barWidth, 6, SH110X_WHITE);
+    display.fillRect(12, 52, barWidth, 6, SH110X_WHITE);
 
     display.display();
   }
 
-  void displayHeader() {
+  void displayPage(int page, float temp, float hum, float heatIndex, float co2) {
+    display.clearDisplay();
+    display.setTextColor(SH110X_WHITE);
+    
+    switch (page) {
+      case 1:
+        display.setTextSize(1);
+        display.setCursor(30, 0);
+        display.println(F("Temperature"));
+        display.setTextSize(2);
+        display.setCursor(28, 28);
+        display.print(temp, 1);
+        display.setFont(&Picopixel);
+        display.print(" o");
+        display.setFont(NULL);
+        display.println(F("C"));
+        break;
+      case 2:
+        display.setTextSize(1);
+        display.setCursor(40, 0);
+        display.println(F("Humidity"));
+        display.setTextSize(2);
+        display.setCursor(28, 28);
+        display.print(hum, 1);
+        display.println(F(" %"));
+        break;
+      case 3:
+        display.setTextSize(1);
+        display.setCursor(35, 0);
+        display.print(F("Feels Like"));
+        display.setTextSize(2);
+        display.setCursor(30, 28);
+        display.print(heatIndex, 1);
+        display.setFont(&Picopixel);
+        display.print(" o");
+        display.setFont(NULL);
+        display.println(F("C"));
+        break;
+      case 4:
+        display.setTextSize(1);
+        display.setCursor(37, 0);
+        display.print(F("CO"));
+        display.setFont(&Picopixel);
+        display.print(F("2"));
+        display.setFont(NULL);
+        display.print(F(" Level"));
+        display.setTextSize(2);
+        display.setCursor(34, 28);
+        display.print(co2, 0);
+        display.println(F(" ppm"));
+        break;
+      default:
+        display.setTextSize(2);
+        display.setCursor(0, 10);
+        display.println(F("SegarKosan"));
+        display.setTextSize(1);
+        display.setCursor(0, 35);
+        display.println(F("Made by"));
+        display.setCursor(0, 45);
+        display.println(F("Morning Group"));
+        break;
+    }
+    display.display();
+  }
+
+  void displayHeader() {  // Deprecated
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SH110X_WHITE);

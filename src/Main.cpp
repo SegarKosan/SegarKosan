@@ -66,7 +66,7 @@ void setup() {
   Serial.println(F("[INFO] SH1106 display initialized"));
 
   // Connect to WiFi using Net::begin
-  oled.displayBootupMessage("Connecting WiFi", 30, 0);
+  oled.displayBootupMessage("Networking", 30, 0);
   Net::Config cfg;
   cfg.ssid = ssid;
   cfg.pass = password;
@@ -107,6 +107,11 @@ void loop() {
   Net::handle(); // Handle Net tasks (WebServer, MQTT if enabled)
   webSocket.loop();
 
+  static float lastTemp = 0;
+  static float lastHum = 0;
+  static float lastHI = 0;
+  static float lastCO2 = 0;
+
   unsigned long now = millis();
   if (now - lastSend > 5000) {
     lastSend = now;
@@ -116,12 +121,12 @@ void loop() {
 
     if (!dht22.isValidReading(temperature, humidity)) {
       Serial.println(F("[ERROR] DHT22 read failed"));
-      oled.displayError("DHT22 Error");
-      oled.show();
-      return;
+      // Keep last valid values or show error on specific page if needed
+    } else {
+      lastTemp = temperature;
+      lastHum = humidity;
+      lastHI = DHT22Sensor::computeHeatIndex(temperature, humidity);
     }
-
-    float heatIndex = DHT22Sensor::computeHeatIndex(temperature, humidity);
 
     mq135.update();
     // Moving average CO2
@@ -144,42 +149,47 @@ void loop() {
       co2ppm = sum / filled;
       if (!isfinite(co2ppm) || co2ppm <= 0 || co2ppm > 50000) co2ppm = NAN;
     }
+    
+    if (isfinite(co2ppm)) {
+      lastCO2 = co2ppm;
+    }
 
     // Serial debug
-    Serial.print(F("Temp: ")); Serial.print(temperature,1); Serial.print("°C  ");
-    Serial.print(F("Hum: ")); Serial.print(humidity,1); Serial.print("%  ");
-    Serial.print(F("Heat index: ")); Serial.print(heatIndex,1); Serial.print("°C  ");
-    Serial.print(F("CO2: ")); if(isfinite(co2ppm)) Serial.println(co2ppm,0); else Serial.println(F("ERR"));
-
-    // OLED
-    oled.displayHeader();
-    oled.displayDHT22(temperature, humidity, heatIndex);
-    oled.displayMQ135(co2ppm);
-    oled.show();
+    Serial.print(F("Temp: ")); Serial.print(lastTemp,1); Serial.print("°C  ");
+    Serial.print(F("Hum: ")); Serial.print(lastHum,1); Serial.print("%  ");
+    Serial.print(F("Heat index: ")); Serial.print(lastHI,1); Serial.print("°C  ");
+    Serial.print(F("CO2: ")); Serial.println(lastCO2,0);
 
     // WebSocket JSON
     StaticJsonDocument<256> doc;
     doc["type"] = "sensor";
     doc["device_id"] = "ESP32-C3";
-    doc["payload"]["temperature"] = temperature;
-    doc["payload"]["humidity"] = humidity;
-    doc["payload"]["heat_index"] = heatIndex;
-    doc["payload"]["co2"] = isfinite(co2ppm) ? co2ppm : -1;
+    doc["payload"]["temperature"] = lastTemp;
+    doc["payload"]["humidity"] = lastHum;
+    doc["payload"]["heat_index"] = lastHI;
+    doc["payload"]["co2"] = lastCO2;
     time_t epoch = time(nullptr);
     doc["timestamp"] = (epoch > 0) ? static_cast<long>(epoch) : static_cast<long>(millis() / 1000);
 
     String json; 
     if (serializeJson(doc, json) == 0) {
       Serial.println(F("[ERROR] JSON serialization failed"));
-      return;
-    }
-    if (WiFi.status() != WL_CONNECTED) {
+    } else if (WiFi.status() != WL_CONNECTED) {
       Serial.println(F("[WARN] WiFi disconnected, skipping send"));
-      return;
+    } else {
+      webSocket.sendTXT(json);
+      Serial.print(F("[INFO] Sent data to server: "));
+      Serial.println(json);
     }
+  }
 
-    webSocket.sendTXT(json);
-    Serial.print(F("[INFO] Sent data to server: "));
-    Serial.println(json);
+  // OLED Paging Logic (Every 4s)
+  static unsigned long lastPageChange = 0;
+  static int currentPage = 1;
+  if (now - lastPageChange > 4000) {
+    lastPageChange = now;
+    oled.displayPage(currentPage, lastTemp, lastHum, lastHI, lastCO2);
+    currentPage++;
+    if (currentPage > 5) currentPage = 1;
   }
 }
