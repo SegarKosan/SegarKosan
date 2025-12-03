@@ -131,7 +131,7 @@ void setup() {
   Serial.println(F("MQ135 preheat 30s..."));
 
   // Preheat dengan callback progress bar ke OLED
-  /*
+  
   mq135.preheat(30000, 50, [](int remaining) {
     static int frame = 0;
     static unsigned long lastFrame = 0;
@@ -142,7 +142,7 @@ void setup() {
       lastFrame = now;
     }
   });
-  */
+  
   mq135.begin(100, 100);
   Serial.print(F("MQ135 R0 = ")); Serial.println(mq135.getR0(), 3);
 
