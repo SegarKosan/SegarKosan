@@ -21,6 +21,7 @@ struct Config {
   const char* ap_ssid   = "ESP32C3-AP";
   const char* ap_pass   = "pass12345";   // min 8 char
   bool        enable_ap_fallback = true; // SoftAP jika STA gagal
+  bool        use_existing_wifi = false; // Jangan ganggu koneksi STA yang sudah aktif
   bool        enable_cors = true;        // Access-Control-Allow-Origin: *
   uint32_t    sta_timeout_ms = 10000;     // tunggu koneksi STA
 
@@ -249,33 +250,47 @@ inline void begin(const Config& cfg = Config{}) {
   cbReadR0() = cfg.readR0;
   cbRecal()  = cfg.recalibrate;
 
-  // Mode STA
-  WiFi.mode(WIFI_STA);
-  WiFi.setTxPower(WIFI_POWER_8_5dBm);
-
+  bool alreadyConnected = cfg.use_existing_wifi && (WiFi.getMode() & WIFI_MODE_STA) && (WiFi.status() == WL_CONNECTED);
+  bool staConnected = false;
   auto ipSet = [](const IPAddress& ip){ return ip != IPAddress(0,0,0,0); };
 
-  // Apply static IP if provided (must be before WiFi.begin)
-  if (ipSet(cfg.sta_ip) && ipSet(cfg.sta_gw) && ipSet(cfg.sta_sn)) {
-    bool ok = WiFi.config(cfg.sta_ip, cfg.sta_gw, cfg.sta_sn,
-                          ipSet(cfg.sta_dns1) ? cfg.sta_dns1 : IPAddress(0,0,0,0),
-                          ipSet(cfg.sta_dns2) ? cfg.sta_dns2 : IPAddress(0,0,0,0));
-    if (!ok) {
-      Serial.println(F("[NET] WiFi.config (STA) failed"));
+  if (!alreadyConnected) {
+    WiFi.mode(WIFI_STA);
+
+    // Apply static IP if provided (must be before WiFi.begin)
+    if (ipSet(cfg.sta_ip) && ipSet(cfg.sta_gw) && ipSet(cfg.sta_sn)) {
+      bool ok = WiFi.config(cfg.sta_ip, cfg.sta_gw, cfg.sta_sn,
+                            ipSet(cfg.sta_dns1) ? cfg.sta_dns1 : IPAddress(0,0,0,0),
+                            ipSet(cfg.sta_dns2) ? cfg.sta_dns2 : IPAddress(0,0,0,0));
+      if (!ok) {
+        Serial.println(F("[NET] WiFi.config (STA) failed"));
+      }
     }
-  }
-  // Set hostname if provided
-  if (cfg.hostname && cfg.hostname[0]) {
-    WiFi.setHostname(cfg.hostname);
-  }
-  WiFi.begin(cfg.ssid, cfg.pass);
+    // Set hostname if provided
+    if (cfg.hostname && cfg.hostname[0]) {
+      WiFi.setHostname(cfg.hostname);
+    }
 
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < cfg.sta_timeout_ms) {
-    delay(200);
+    if (cfg.ssid && cfg.ssid[0]) {
+      WiFi.begin(cfg.ssid, cfg.pass);
+    } else {
+      WiFi.begin();
+    }
+
+    uint32_t t0 = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - t0 < cfg.sta_timeout_ms) {
+      delay(200);
+    }
+
+    staConnected = (WiFi.status() == WL_CONNECTED);
+  } else {
+    staConnected = true;
+    Serial.print(F("[NET] Using existing WiFi connection: "));
+    Serial.println(WiFi.SSID());
   }
 
-  if (WiFi.status() == WL_CONNECTED) {
+  if (staConnected) {
+    WiFi.setTxPower(WIFI_POWER_8_5dBm);
     // connected as STA
     Serial.print(F("[NET] STA IP: ")); Serial.println(WiFi.localIP());
     Serial.print(F("[NET] Gateway: ")); Serial.println(WiFi.gatewayIP());
@@ -466,7 +481,7 @@ inline bool reconnect() {
 
   // Ensure STA mode and clean disconnect
   WiFi.mode(WIFI_STA);
-  WiFi.disconnect(true, true);
+  WiFi.disconnect(!cfg.use_existing_wifi, true);
   delay(100);
 
   // Apply static IP if provided (must be before WiFi.begin)
@@ -480,7 +495,11 @@ inline bool reconnect() {
   if (cfg.hostname && cfg.hostname[0]) {
     WiFi.setHostname(cfg.hostname);
   }
-  WiFi.begin(cfg.ssid, cfg.pass);
+  if (!cfg.use_existing_wifi && cfg.ssid && cfg.ssid[0]) {
+    WiFi.begin(cfg.ssid, cfg.pass);
+  } else {
+    WiFi.begin();
+  }
 
   uint32_t t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < cfg.sta_timeout_ms) {

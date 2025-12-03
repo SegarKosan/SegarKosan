@@ -10,6 +10,7 @@
 #include "SSH1106.h"
 #include <time.h>
 #include <WiFi.h>
+#include <WiFiManager.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
@@ -21,8 +22,9 @@ MQ135Sensor mq135;
 unsigned long lastSend = 0;
 
 // ======================== WIFI & MQTT CONFIG ==========================
-const char* ssid = WIFI_SSID;
-const char* password = WIFI_PASSWORD;
+const char* deviceHostname = HOSTNAME;
+constexpr char CONFIG_PORTAL_SSID[] = "SegarKosan-Setup";
+constexpr char CONFIG_PORTAL_PASS[] = "segarkosan";
 
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
@@ -95,34 +97,65 @@ void setup() {
     delay(200);
   }
 
-  // WiFi
+  // WiFi (managed by WiFiManager)
   oled.displayBootupMessage("Networking", 30, 0);
 
-  Net::Config cfg;
-  cfg.ssid = ssid;
-  cfg.pass = password;
-  cfg.enable_ap_fallback = false; // Disable AP fallback to keep trying to connect
-  cfg.mqtt_server = mqttServer;   // Pass MQTT server to suppress warning
-  Net::begin(cfg);
+  WiFiManager wifiManager;
+  wifiManager.setDebugOutput(true);
+  wifiManager.setWiFiAutoReconnect(true);
+  wifiManager.setConfigPortalTimeout(0); // keep portal up until credentials saved
+  wifiManager.setConnectTimeout(20);
+  wifiManager.setRemoveDuplicateAPs(true);
+  wifiManager.setAPCallback([](WiFiManager* manager){
+    Serial.println(F("[WiFi] Config portal active"));
+  });
+#if defined(ESP32)
+  wifiManager.setAPClientCheck(true);
+#endif
+  if (deviceHostname && deviceHostname[0] != '\0') {
+    wifiManager.setHostname(deviceHostname);
+  }
 
-  // Wait WiFi connected
-  Serial.print("Connecting to WiFi: ");
-  Serial.println(ssid);
+  // Ensure we start clean in STA mode without erasing saved credentials
+  WiFi.mode(WIFI_STA);
+  WiFi.setTxPower(WIFI_POWER_8_5dBm); // DO NOT CHANGE THIS LINE
+  WiFi.disconnect();
+  delay(100);
 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-    static int retry = 0;
-    if (++retry > 10) {
-      retry = 0;
-      Serial.print(" [WiFi Status: ");
-      Serial.print(WiFi.status());
-      Serial.print("] ");
-      // Re-trigger connection if needed
-      WiFi.begin(ssid, password);
+  bool wifiConnected = wifiManager.autoConnect(CONFIG_PORTAL_SSID, CONFIG_PORTAL_PASS);
+
+  if (!wifiConnected) {
+    Serial.println(F("[WiFi] AutoConnect did not join any network"));
+    oled.displayBootupMessage("Portal Active", 40, 0);
+
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(CONFIG_PORTAL_SSID, CONFIG_PORTAL_PASS, 1, 0, 4); // force ch1 + up to 4 clients
+    Serial.print(F("[WiFi] SoftAP channel 1 | IP: "));
+    Serial.println(WiFi.softAPIP());
+
+    while (!wifiConnected) {
+      wifiConnected = wifiManager.startConfigPortal(CONFIG_PORTAL_SSID, CONFIG_PORTAL_PASS);
+      if (!wifiConnected) {
+        Serial.println(F("[WiFi] Portal still waiting for credentials"));
+        delay(500);
+      }
     }
   }
-  Serial.println("\n[WiFi] Connected!");
+
+  Serial.print(F("[WiFi] Connected to "));
+  Serial.print(WiFi.SSID());
+  Serial.print(F(" | IP: "));
+  Serial.println(WiFi.localIP());
+  oled.displayBootupMessage("WiFi Ready", 40, 0);
+
+  Net::Config cfg;
+  cfg.ssid = nullptr;
+  cfg.pass = nullptr;
+  cfg.use_existing_wifi = true;
+  cfg.enable_ap_fallback = false; // WiFiManager handles provisioning
+  cfg.hostname = deviceHostname;
+  cfg.mqtt_server = mqttServer;   // Pass MQTT server to suppress warning
+  Net::begin(cfg);
 
   // Sensors
   dht22.begin();
