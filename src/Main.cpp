@@ -27,9 +27,19 @@ const char* password = WIFI_PASSWORD;
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
-const char* mqttServer = "192.168.18.76"; 
+const char* mqttServer = MQTT_SERVER; 
 const uint16_t mqttPort = 1883;
 const char* mqttTopic = "segar_kosan/sensors";
+
+#ifndef MQTT_USER
+#define MQTT_USER ""
+#endif
+#ifndef MQTT_PASS
+#define MQTT_PASS ""
+#endif
+
+const char* mqttUser = MQTT_USER;
+const char* mqttPass = MQTT_PASS;
 
 // ======================== SIMPLE PING FUNCTION ==========================
 bool pingHost(const char* host, uint16_t port = 1883, uint16_t timeout = 1000) {
@@ -50,10 +60,14 @@ bool pingHost(const char* host, uint16_t port = 1883, uint16_t timeout = 1000) {
 
 // ======================== MQTT CONNECT ==============================
 void mqttConnect() {
-  Serial.println("[MQTT] Connecting...");
+  Serial.print("[MQTT] Connecting to '");
+  Serial.print(mqttServer);
+  Serial.print("' as '");
+  Serial.print(mqttUser);
+  Serial.println("'");
 
   while (!mqttClient.connected()) {
-    if (mqttClient.connect("esp32c3-client")) {
+    if (mqttClient.connect("esp32c3-client", mqttUser, mqttPass)) {
       Serial.println("[MQTT] Connected!");
       break;
     } else {
@@ -87,12 +101,26 @@ void setup() {
   Net::Config cfg;
   cfg.ssid = ssid;
   cfg.pass = password;
+  cfg.enable_ap_fallback = false; // Disable AP fallback to keep trying to connect
+  cfg.mqtt_server = mqttServer;   // Pass MQTT server to suppress warning
   Net::begin(cfg);
 
   // Wait WiFi connected
+  Serial.print("Connecting to WiFi: ");
+  Serial.println(ssid);
+
   while (WiFi.status() != WL_CONNECTED) {
-    delay(300);
+    delay(500);
     Serial.print(".");
+    static int retry = 0;
+    if (++retry > 10) {
+      retry = 0;
+      Serial.print(" [WiFi Status: ");
+      Serial.print(WiFi.status());
+      Serial.print("] ");
+      // Re-trigger connection if needed
+      WiFi.begin(ssid, password);
+    }
   }
   Serial.println("\n[WiFi] Connected!");
 
@@ -103,6 +131,7 @@ void setup() {
   Serial.println(F("MQ135 preheat 30s..."));
 
   // Preheat dengan callback progress bar ke OLED
+  /*
   mq135.preheat(30000, 50, [](int remaining) {
     static int frame = 0;
     static unsigned long lastFrame = 0;
@@ -113,7 +142,7 @@ void setup() {
       lastFrame = now;
     }
   });
-
+  */
   mq135.begin(100, 100);
   Serial.print(F("MQ135 R0 = ")); Serial.println(mq135.getR0(), 3);
 
