@@ -1,10 +1,11 @@
 /*
  * SegarKosan: Smart Kosan with Odor Detection (MQTT version)
  * ESP32-C3 Full Stable Build
+ * Updated with Odor Analysis Logic (Weighted Score & Description)
  */
 
 #include "DHT22.h"
-#include "MQ135.h"
+#include "mq135.h" // Menggunakan file header yang baru diupdate
 #include "esp32c3.h"
 #include "SSH1106.h"
 #include <time.h>
@@ -26,7 +27,7 @@ const char* password = WIFI_PASSWORD;
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
-const char* mqttServer = "192.168.203.94"; 
+const char* mqttServer = "192.168.18.76"; 
 const uint16_t mqttPort = 1883;
 const char* mqttTopic = "segar_kosan/sensors";
 
@@ -101,6 +102,7 @@ void setup() {
   oled.displayBootupMessage("Preheating", 40, 0);
   Serial.println(F("MQ135 preheat 30s..."));
 
+  // Preheat dengan callback progress bar ke OLED
   mq135.preheat(30000, 50, [](int remaining) {
     static int frame = 0;
     static unsigned long lastFrame = 0;
@@ -141,15 +143,19 @@ void loop() {
     mqttConnect();
   }
 
-  static float lastTemp = 0;
-  static float lastHum = 0;
+  // Static variables untuk menyimpan pembacaan terakhir
+  static float lastTemp = 25.0; // Default ke nilai ideal
+  static float lastHum = 50.0;  // Default ke nilai ideal
   static float lastHI = 0;
-  static float lastCO2 = 0;
+  static float lastCO2 = 400.0; // Default ke nilai fresh
+  static int lastScore = 0;     
+  static String lastStatus = "OK";
+  static String lastLevelDesc = ""; // Variabel baru untuk deskripsi level
 
   if (now - lastSend > 5000) {
     lastSend = now;
 
-    // Read DHT22
+    // --- 1. Read DHT22 ---
     float humidity = dht22.readHumidity();
     float temperature = dht22.readTemperature();
 
@@ -159,39 +165,64 @@ void loop() {
       lastHI = DHT22Sensor::computeHeatIndex(temperature, humidity);
     }
 
-    // Read MQ135
+    // --- 2. Read MQ135 PPM ---
     mq135.update();
     float co2_raw = mq135.readCO2();
     if (isfinite(co2_raw) && co2_raw > 0 && co2_raw < 50000) {
       lastCO2 = co2_raw;
     }
 
-    // JSON build
-    StaticJsonDocument<256> doc;
+    // --- 3. Read Raw Analog for Analysis ---
+    int rawADC = analogRead(MQ135_ANALOG_PIN); 
+    // Konversi ke skala 10-bit (0-1023) untuk konsistensi perhitungan
+    int raw10bit = rawADC >> 2; 
+
+    // --- 4. Calculate Odor Score & Type (Fixed) ---
+    // Update panggilan fungsi agar sesuai dengan header MQ135Sensor yang baru
+    // calculateOdorScore(float co2, float temp, float hum, int raw_mq)
+    lastScore = mq135.calculateOdorScore(lastCO2, lastTemp, lastHum, raw10bit);
+    
+    // detectOdorType(int raw_mq, float hum)
+    lastStatus = mq135.detectOdorType(raw10bit, lastHum);
+    
+    // Dapatkan deskripsi level
+    lastLevelDesc = mq135.getScoreDescription(lastScore);
+
+    // --- 5. JSON build ---
+    StaticJsonDocument<512> doc;
     doc["type"] = "sensor";
     doc["device_id"] = "ESP32-C3";
-    doc["payload"]["temperature"] = lastTemp;
-    doc["payload"]["humidity"] = lastHum;
-    doc["payload"]["heat_index"] = lastHI;
-    doc["payload"]["co2"] = lastCO2;
+    
+    JsonObject payload = doc.createNestedObject("payload");
+    payload["temperature"] = lastTemp;
+    payload["humidity"] = lastHum;
+    payload["heat_index"] = lastHI;
+    payload["co2"] = lastCO2;
+    payload["odor_score"] = lastScore;
+    payload["odor_status"] = lastStatus;
+    payload["odor_level"] = lastLevelDesc;
 
-    char out[256];
+    char out[512];
     serializeJson(doc, out);
 
     mqttClient.publish(mqttTopic, out);
-    Serial.print(F("[MQTT] Published: "));
-    Serial.println(out);
+    
+    // Debug Print
+    Serial.print(F("[DATA] Score: ")); Serial.print(lastScore);
+    Serial.print(F(" | Type: ")); Serial.print(lastStatus);
+    Serial.print(F(" | Level: ")); Serial.println(lastLevelDesc);
   }
 
-  // OLED pages
+  // --- OLED Display Pages ---
   static unsigned long lastPageChange = 0;
   static int currentPage = 1;
 
   if (now - lastPageChange > 4000) {
     lastPageChange = now;
+    
     oled.displayPage(currentPage, lastTemp, lastHum, lastHI, lastCO2);
 
     currentPage++;
     if (currentPage > 5) currentPage = 1;
   }
-}
+};
