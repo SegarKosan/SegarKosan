@@ -1,188 +1,290 @@
 /*
- * SegarKosan: Smart Kosan with Odor Detection
- * 
- * PIN CONFIGURATION (ESP32-C3):
- * =============================
- * DHT22:     GPIO3 (Analog ADC)
- * SH1106:    GPIO8 (SDA), GPIO9 (SCL) - I2C
- * MQ135:     GPIO2 (Analog ADC)
-*/
+ * SegarKosan: Smart Kosan with Odor Detection (MQTT version)
+ * ESP32-C3 Full Stable Build
+ * Updated with Odor Analysis Logic (Weighted Score & Description)
+ */
 
 #include "DHT22.h"
-#include "MQ135.h"
+#include "mq135.h" // Menggunakan file header yang baru diupdate
 #include "esp32c3.h"
 #include "SSH1106.h"
 #include <time.h>
+#include <WiFi.h>
+#include <WiFiManager.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
 
-
+// ======================== SENSORS & DISPLAY ==========================
 DHT22Sensor dht22;
 SH1106Display oled;
 MQ135Sensor mq135;
-WebSocketsClient webSocket;
+
 unsigned long lastSend = 0;
 
-// WiFi & Websocket Config
-const char* ssid = WIFI_SSID;
-const char* password = WIFI_PASSWORD;
-const char* websocket_server = WEBSOCKET_SERVER; 
-const uint16_t websocket_port = WEBSOCKET_PORT;
+// ======================== WIFI & MQTT CONFIG ==========================
+const char* deviceHostname = HOSTNAME;
+constexpr char CONFIG_PORTAL_SSID[] = "SegarKosan-Setup";
+constexpr char CONFIG_PORTAL_PASS[] = "segarkosan";
 
-// Event Handler WebSocket 
-void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
-  switch (type) {
-    case WStype_CONNECTED:
-      Serial.println("[INFO] Connected to WebSocket Server!");
-      break;
-    case WStype_DISCONNECTED:
-      Serial.println("[INFO] Disconnected from server! Reconnecting...");
-      break;
-    case WStype_TEXT:
-      Serial.printf("[INFO] Message from server: %s\n", payload);
-      break;
-    default:
-      break;
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
+
+const char* mqttServer = MQTT_SERVER; 
+const uint16_t mqttPort = 1883;
+const char* mqttTopic = "segar_kosan/sensors";
+
+#ifndef MQTT_USER
+#define MQTT_USER ""
+#endif
+#ifndef MQTT_PASS
+#define MQTT_PASS ""
+#endif
+
+const char* mqttUser = MQTT_USER;
+const char* mqttPass = MQTT_PASS;
+
+// ======================== SIMPLE PING FUNCTION ==========================
+bool pingHost(const char* host, uint16_t port = 1883, uint16_t timeout = 1000) {
+  WiFiClient testClient;
+  unsigned long start = millis();
+
+  Serial.printf("[PING] Testing %s:%d ... ", host, port);
+
+  if (testClient.connect(host, port)) {
+    testClient.stop();
+    Serial.printf("OK (%lums)\n", millis() - start);
+    return true;
+  } else {
+    Serial.println("FAILED");
+    return false;
   }
 }
 
+// ======================== MQTT CONNECT ==============================
+void mqttConnect() {
+  Serial.print("[MQTT] Connecting to '");
+  Serial.print(mqttServer);
+  Serial.print("' as '");
+  Serial.print(mqttUser);
+  Serial.println("'");
+
+  while (!mqttClient.connected()) {
+    if (mqttClient.connect("esp32c3-client", mqttUser, mqttPass)) {
+      Serial.println("[MQTT] Connected!");
+      break;
+    } else {
+      Serial.print("[MQTT] Failed rc=");
+      Serial.println(mqttClient.state());
+      delay(2000);
+    }
+  }
+}
+
+// ======================== SETUP =====================================
 void setup() {
   Serial.begin(115200);
-  
   Serial.println(F("=== SegarKosan on ESP32-C3 ==="));
-  
-  // Initialize OLED
-  if (!oled.begin()) { Serial.println(F("[ERROR] SH1106 allocation failed")); while (1) { delay(1000); } }
+
+  // OLED Init
+  if (!oled.begin()) { 
+    Serial.println(F("[ERROR] SH1106 allocation failed")); 
+    while (1) delay(1000);
+  }
   oled.clear();
-  // Animate Initializing
+
   for (int i = 0; i < 6; i++) {
     oled.displayBootupMessage("Initializing", 10, i);
-    delay(250);
+    delay(200);
   }
-  Serial.println(F("[INFO] SH1106 display initialized"));
 
-  // Connect to WiFi using Net::begin
+  // WiFi (managed by WiFiManager)
   oled.displayBootupMessage("Networking", 30, 0);
+
+  WiFiManager wifiManager;
+  wifiManager.setDebugOutput(true);
+  wifiManager.setWiFiAutoReconnect(true);
+  wifiManager.setConfigPortalTimeout(0); // keep portal up until credentials saved
+  wifiManager.setConnectTimeout(20);
+  wifiManager.setRemoveDuplicateAPs(true);
+  wifiManager.setAPCallback([](WiFiManager* manager){
+    Serial.println(F("[WiFi] Config portal active"));
+  });
+#if defined(ESP32)
+  wifiManager.setAPClientCheck(true);
+#endif
+  if (deviceHostname && deviceHostname[0] != '\0') {
+    wifiManager.setHostname(deviceHostname);
+  }
+
+  // Ensure we start clean in STA mode without erasing saved credentials
+  WiFi.mode(WIFI_STA);
+  WiFi.setTxPower(WIFI_POWER_8_5dBm); // DO NOT CHANGE THIS LINE
+  WiFi.disconnect();
+  delay(100);
+
+  bool wifiConnected = wifiManager.autoConnect(CONFIG_PORTAL_SSID, CONFIG_PORTAL_PASS);
+
+  if (!wifiConnected) {
+    Serial.println(F("[WiFi] AutoConnect did not join any network"));
+    oled.displayBootupMessage("Portal Active", 40, 0);
+
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(CONFIG_PORTAL_SSID, CONFIG_PORTAL_PASS, 1, 0, 4); // force ch1 + up to 4 clients
+    Serial.print(F("[WiFi] SoftAP channel 1 | IP: "));
+    Serial.println(WiFi.softAPIP());
+
+    while (!wifiConnected) {
+      wifiConnected = wifiManager.startConfigPortal(CONFIG_PORTAL_SSID, CONFIG_PORTAL_PASS);
+      if (!wifiConnected) {
+        Serial.println(F("[WiFi] Portal still waiting for credentials"));
+        delay(500);
+      }
+    }
+  }
+
+  Serial.print(F("[WiFi] Connected to "));
+  Serial.print(WiFi.SSID());
+  Serial.print(F(" | IP: "));
+  Serial.println(WiFi.localIP());
+  oled.displayBootupMessage("WiFi Ready", 40, 0);
+
   Net::Config cfg;
-  cfg.ssid = ssid;
-  cfg.pass = password;
+  cfg.ssid = nullptr;
+  cfg.pass = nullptr;
+  cfg.use_existing_wifi = true;
+  cfg.enable_ap_fallback = false; // WiFiManager handles provisioning
+  cfg.hostname = deviceHostname;
+  cfg.mqtt_server = mqttServer;   // Pass MQTT server to suppress warning
   Net::begin(cfg);
 
-  // Initialize sensors
-  Serial.println(F("Start DHT22..."));
+  // Sensors
   dht22.begin();
 
-  // MQ135 preheat
   oled.displayBootupMessage("Preheating", 40, 0);
-  Serial.println(F("Preheating MQ-135 in clean air (30s)..."));
+  Serial.println(F("MQ135 preheat 30s..."));
+
+  // Preheat dengan callback progress bar ke OLED
+  
   mq135.preheat(30000, 50, [](int remaining) {
     static int frame = 0;
     static unsigned long lastFrame = 0;
     unsigned long now = millis();
-    // Update animation every 250ms
     if (now - lastFrame > 250) {
       int progress = map(30 - remaining, 0, 30, 40, 90);
       oled.displayBootupMessage("Preheating", progress, frame++);
       lastFrame = now;
     }
   });
-  mq135.begin(100, 100); // 100 samples, 100ms interval
-  Serial.print(F("MQ-135 R0 = ")); Serial.println(mq135.getR0(), 3);
+  
+  mq135.begin(100, 100);
+  Serial.print(F("MQ135 R0 = ")); Serial.println(mq135.getR0(), 3);
 
   oled.displayBootupMessage("Setup Complete!", 100);
-  delay(1000);
+  delay(800);
 
-  // WebSocket
-  webSocket.begin(websocket_server, websocket_port, "/");
-  webSocket.onEvent(webSocketEvent);
-  webSocket.setReconnectInterval(3000);
+  // MQTT
+  mqttClient.setServer(mqttServer, mqttPort);
+
+  // First ping test
+  pingHost(mqttServer, mqttPort);
+
+  mqttConnect();
 }
 
+// ======================== MAIN LOOP =====================================
 void loop() {
-  Net::handle(); // Handle Net tasks (WebServer, MQTT if enabled)
-  webSocket.loop();
-
-  static float lastTemp = 0;
-  static float lastHum = 0;
-  static float lastHI = 0;
-  static float lastCO2 = 0;
-
   unsigned long now = millis();
+
+  Net::handle();
+  mqttClient.loop();
+
+  // Reconnect if needed
+  if (!mqttClient.connected()) {
+    Serial.println("[DEBUG] MQTT lost! Testing reachability...");
+    pingHost(mqttServer, mqttPort);
+    mqttConnect();
+  }
+
+  // Static variables untuk menyimpan pembacaan terakhir
+  static float lastTemp = 25.0; // Default ke nilai ideal
+  static float lastHum = 50.0;  // Default ke nilai ideal
+  static float lastHI = 0;
+  static float lastCO2 = 400.0; // Default ke nilai fresh
+  static int lastScore = 0;     
+  static String lastStatus = "OK";
+  static String lastLevelDesc = ""; // Variabel baru untuk deskripsi level
+
   if (now - lastSend > 5000) {
     lastSend = now;
 
+    // --- 1. Read DHT22 ---
     float humidity = dht22.readHumidity();
     float temperature = dht22.readTemperature();
 
-    if (!dht22.isValidReading(temperature, humidity)) {
-      Serial.println(F("[ERROR] DHT22 read failed"));
-      // Keep last valid values or show error on specific page if needed
-    } else {
+    if (dht22.isValidReading(temperature, humidity)) {
       lastTemp = temperature;
       lastHum = humidity;
       lastHI = DHT22Sensor::computeHeatIndex(temperature, humidity);
     }
 
+    // --- 2. Read MQ135 PPM ---
     mq135.update();
-    // Moving average CO2
-    static const int N = 5;
-    static float buf[N];
-    static int idx = 0, filled = 0;
     float co2_raw = mq135.readCO2();
-    float co2ppm = NAN;
-    
-    if (!isfinite(co2_raw) || co2_raw <= 0 || co2_raw > 50000) {
-      Serial.println(F("[WARN] Invalid CO2 raw reading, skipping average update"));
-      co2ppm = NAN;
-      filled = 0; // Optionally reset buffer to avoid contamination
-    } else {
-      buf[idx] = co2_raw;
-      idx = (idx + 1) % N;
-      if (filled < N) filled++;
-      float sum = 0;
-      // Do not reset 'filled' here; preserve historical valid data
-      co2ppm = sum / filled;
-      if (!isfinite(co2ppm) || co2ppm <= 0 || co2ppm > 50000) co2ppm = NAN;
-    }
-    
-    if (isfinite(co2ppm)) {
-      lastCO2 = co2ppm;
+    if (isfinite(co2_raw) && co2_raw > 0 && co2_raw < 50000) {
+      lastCO2 = co2_raw;
     }
 
-    // Serial debug
-    Serial.print(F("Temp: ")); Serial.print(lastTemp,1); Serial.print("°C  ");
-    Serial.print(F("Hum: ")); Serial.print(lastHum,1); Serial.print("%  ");
-    Serial.print(F("Heat index: ")); Serial.print(lastHI,1); Serial.print("°C  ");
-    Serial.print(F("CO2: ")); Serial.println(lastCO2,0);
+    // --- 3. Read Raw Analog for Analysis ---
+    int rawADC = analogRead(MQ135_ANALOG_PIN); 
+    // Konversi ke skala 10-bit (0-1023) untuk konsistensi perhitungan
+    int raw10bit = rawADC >> 2; 
 
-    // WebSocket JSON
-    StaticJsonDocument<256> doc;
+    // --- 4. Calculate Odor Score & Type (Fixed) ---
+    // Update panggilan fungsi agar sesuai dengan header MQ135Sensor yang baru
+    // calculateOdorScore(float co2, float temp, float hum, int raw_mq)
+    lastScore = mq135.calculateOdorScore(lastCO2, lastTemp, lastHum, raw10bit);
+    
+    // detectOdorType(int raw_mq, float hum)
+    lastStatus = mq135.detectOdorType(raw10bit, lastHum);
+    
+    // Dapatkan deskripsi level
+    lastLevelDesc = mq135.getScoreDescription(lastScore);
+
+    // --- 5. JSON build ---
+    StaticJsonDocument<512> doc;
     doc["type"] = "sensor";
     doc["device_id"] = "ESP32-C3";
-    doc["payload"]["temperature"] = lastTemp;
-    doc["payload"]["humidity"] = lastHum;
-    doc["payload"]["heat_index"] = lastHI;
-    doc["payload"]["co2"] = lastCO2;
-    time_t epoch = time(nullptr);
-    doc["timestamp"] = (epoch > 0) ? static_cast<long>(epoch) : static_cast<long>(millis() / 1000);
+    
+    JsonObject payload = doc.createNestedObject("payload");
+    payload["temperature"] = lastTemp;
+    payload["humidity"] = lastHum;
+    payload["heat_index"] = lastHI;
+    payload["co2"] = lastCO2;
+    payload["odor_score"] = lastScore;
+    payload["odor_status"] = lastStatus;
+    payload["odor_level"] = lastLevelDesc;
 
-    String json; 
-    if (serializeJson(doc, json) == 0) {
-      Serial.println(F("[ERROR] JSON serialization failed"));
-    } else if (WiFi.status() != WL_CONNECTED) {
-      Serial.println(F("[WARN] WiFi disconnected, skipping send"));
-    } else {
-      webSocket.sendTXT(json);
-      Serial.print(F("[INFO] Sent data to server: "));
-      Serial.println(json);
-    }
+    char out[512];
+    serializeJson(doc, out);
+
+    mqttClient.publish(mqttTopic, out);
+    
+    // Debug Print
+    Serial.print(F("[DATA] Score: ")); Serial.print(lastScore);
+    Serial.print(F(" | Type: ")); Serial.print(lastStatus);
+    Serial.print(F(" | Level: ")); Serial.println(lastLevelDesc);
   }
 
-  // OLED Paging Logic (Every 4s)
+  // --- OLED Display Pages ---
   static unsigned long lastPageChange = 0;
   static int currentPage = 1;
+
   if (now - lastPageChange > 4000) {
     lastPageChange = now;
+    
     oled.displayPage(currentPage, lastTemp, lastHum, lastHI, lastCO2);
+
     currentPage++;
     if (currentPage > 5) currentPage = 1;
   }
-}
+};

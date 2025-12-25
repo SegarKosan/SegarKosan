@@ -1,0 +1,24 @@
+flowchart TB
+      subgraph components["Components Layer"]
+            DHT22["DHT22 Sensor"]
+            MQ135["MQ-135 Sensor"]
+            SH1106["SH1106 Display"]
+      end
+      subgraph esp32-c3["Microcontroller Layer"]
+            ESP32["ESP32-C3"]
+            ESP32_MQTT["MQTT Broker"]
+            ESP32_WEB["WebServer"]
+            wifimngr["WiFi Manager"]
+      end
+  subgraph ESP32-C3["SegarKosan IOT"]
+      components
+      esp32-c3
+  end
+    ESP32 -- Boot Progress --> SH1106
+    ESP32 -- 4. Establish Connection--> ESP32_MQTT
+    DHT22 -- 3, Preheating --> ESP32
+    MQ135 -- 3, Preheating (30s) --> ESP32
+    ESP32 -- 1. Open Access Point --> ESP32_WEB
+    ESP32_WEB -- 3. Retrieved WiFi Credential--> ESP32
+    wifimngr <-.-> ESP32_WEB
+    Local(("User")) -- "2. Connect via WiFi" --> wifimngr
